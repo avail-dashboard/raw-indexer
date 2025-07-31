@@ -11,9 +11,9 @@ class AvailExplorerIndexer {
         this.database = new ExplorerDatabase();
         
         this.config = {
-            startBlock: parseInt(process.env.START_BLOCK) || 0,
-            endBlock: parseInt(process.env.END_BLOCK) || 100,
-            requestDelay: parseInt(process.env.REQUEST_DELAY) || 500,
+            startBlock: parseInt(process.env.START_BLOCK),
+            endBlock: parseInt(process.env.END_BLOCK),
+            requestDelay: parseInt(process.env.REQUEST_DELAY),
             maxRetries: 3,
             resumeOnError: true
         };
@@ -105,6 +105,13 @@ class AvailExplorerIndexer {
     // Determine starting block (clean block boundaries)
     async determineStartBlock() {
         try {
+            // If START_BLOCK is explicitly defined, use it instead of resume logic
+            if (!isNaN(this.config.startBlock)) {
+                console.log(`🎯 Using explicit START_BLOCK: ${this.config.startBlock}`);
+                return this.config.startBlock;
+            }
+            
+            // If START_BLOCK is not defined, use resume logic
             const lastProcessed = await this.database.getLastProcessedBlock();
             
             if (lastProcessed !== null) {
@@ -119,12 +126,16 @@ class AvailExplorerIndexer {
                 }
             }
             
-            console.log(`🆕 Starting fresh from block ${this.config.startBlock}`);
-            return this.config.startBlock;
+            console.log(`🆕 No previous data found, starting from block 1`);
+            return 1; // Default to block 1 if no START_BLOCK and no previous data
         } catch (error) {
             console.warn(`⚠️ Could not determine resume point: ${error.message}`);
-            console.log(`🔄 Defaulting to start block ${this.config.startBlock}`);
-            return this.config.startBlock;
+            if (!isNaN(this.config.startBlock)) {
+                console.log(`🔄 Defaulting to explicit start block ${this.config.startBlock}`);
+                return this.config.startBlock;
+            }
+            console.log(`🔄 Defaulting to block 1`);
+            return 1;
         }
     }
 
