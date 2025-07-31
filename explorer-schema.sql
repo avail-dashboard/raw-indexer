@@ -11,8 +11,7 @@ DROP TABLE IF EXISTS account_profiles CASCADE;
 DROP TABLE IF EXISTS event_data CASCADE;
 DROP TABLE IF EXISTS extrinsic_events CASCADE;
 DROP TABLE IF EXISTS extrinsic_data CASCADE;
-DROP TABLE IF EXISTS block_analytics CASCADE;
-DROP TABLE IF EXISTS network_statistics CASCADE;
+-- Analytics tables removed - storing only raw blockchain data
 DROP TABLE IF EXISTS app_registrations CASCADE;
 DROP TABLE IF EXISTS kate_commitments CASCADE;
 DROP TABLE IF EXISTS block_headers CASCADE;
@@ -339,69 +338,7 @@ CREATE TABLE staking_events (
 -- NETWORK ANALYTICS AND STATISTICS
 -- ================================
 
--- Network Statistics (aggregated per block)
-CREATE TABLE network_statistics (
-    id SERIAL PRIMARY KEY,
-    block_number NUMERIC(39,0) NOT NULL UNIQUE,
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
-    
-    -- Block timing statistics
-    block_time_ms INTEGER,
-    finalization_delay_ms INTEGER,
-    
-    -- Transaction statistics
-    total_extrinsics INTEGER DEFAULT 0,
-    successful_extrinsics INTEGER DEFAULT 0,
-    failed_extrinsics INTEGER DEFAULT 0,
-    total_events INTEGER DEFAULT 0,
-    
-    -- Fee statistics
-    total_fees_collected NUMERIC(39,0) DEFAULT 0,
-    total_tips_collected NUMERIC(39,0) DEFAULT 0,
-    average_fee NUMERIC(39,0) DEFAULT 0,
-    
-    -- DA statistics
-    total_data_submissions INTEGER DEFAULT 0,
-    total_data_size INTEGER DEFAULT 0,
-    da_utilization_percentage DECIMAL(5,2) DEFAULT 0,
-    
-    -- Account activity
-    active_accounts INTEGER DEFAULT 0,
-    new_accounts INTEGER DEFAULT 0,
-    
-    -- Network state
-    total_issuance NUMERIC(39,0),
-    active_validators INTEGER,
-    
-    -- Indexing metadata
-    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Block Analytics (computed metrics per block)
-CREATE TABLE block_analytics (
-    id SERIAL PRIMARY KEY,
-    block_number NUMERIC(39,0) NOT NULL UNIQUE,
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
-    
-    -- Performance metrics
-    tps DECIMAL(10,2) DEFAULT 0, -- Transactions per second
-    bps INTEGER DEFAULT 0, -- Bytes per second
-    
-    -- Fee analytics
-    fee_percentiles JSONB, -- 25th, 50th, 75th, 95th percentiles
-    gas_usage_stats JSONB,
-    
-    -- DA analytics
-    app_space_utilization JSONB, -- Per app utilization
-    data_efficiency_ratio DECIMAL(10,4),
-    
-    -- Validator performance
-    block_production_time_ms INTEGER,
-    validator_performance JSONB,
-    
-    -- Indexing metadata
-    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- Analytics tables removed - storing only raw blockchain data
 
 -- ================================
 -- INDEXES FOR PERFORMANCE
@@ -446,9 +383,7 @@ CREATE INDEX idx_data_submissions_app ON data_submissions(app_id);
 CREATE INDEX idx_data_submissions_submitter ON data_submissions(submitter_account);
 CREATE INDEX idx_data_submissions_block ON data_submissions(block_number);
 
--- Analytics indexes
-CREATE INDEX idx_network_statistics_block ON network_statistics(block_number);
-CREATE INDEX idx_block_analytics_block ON block_analytics(block_number);
+-- Analytics indexes removed
 
 -- Staking indexes
 CREATE INDEX idx_staking_events_validator ON staking_events(validator_account);
@@ -485,8 +420,7 @@ COMMENT ON TABLE balance_history IS 'Historical balance snapshots per block';
 COMMENT ON TABLE data_submissions IS 'Avail DA data submissions tracking';
 COMMENT ON TABLE transfer_events IS 'AVAIL token transfer events';
 COMMENT ON TABLE staking_events IS 'Staking related events and rewards';
-COMMENT ON TABLE network_statistics IS 'Aggregated network statistics per block';
-COMMENT ON TABLE block_analytics IS 'Computed analytics and performance metrics';
+-- Analytics table comments removed
 
 COMMENT ON COLUMN block_headers.block_number IS 'Block number as NUMERIC(39,0) to handle BigInt values';
 COMMENT ON COLUMN extrinsic_data.tip IS 'Transaction tip in AVAIL base units (plancks)';

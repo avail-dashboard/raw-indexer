@@ -1,22 +1,19 @@
 // Main Avail DA Explorer Indexer
-// Orchestrates complete pipeline with comprehensive data extraction and analytics
+// Orchestrates complete pipeline for raw blockchain data extraction and storage
 
 require('dotenv').config();
 const { AvailExplorerExtractor } = require('./explorer-extractor');
 const { ExplorerDatabase } = require('./explorer-database');
-const { ExplorerAnalytics } = require('./explorer-analytics');
 
 class AvailExplorerIndexer {
     constructor() {
         this.extractor = new AvailExplorerExtractor();
         this.database = new ExplorerDatabase();
-        this.analytics = new ExplorerAnalytics();
         
         this.config = {
             startBlock: parseInt(process.env.START_BLOCK) || 0,
             endBlock: parseInt(process.env.END_BLOCK) || 100,
             requestDelay: parseInt(process.env.REQUEST_DELAY) || 500,
-            batchSize: 5, // Process blocks in batches for better performance
             maxRetries: 3,
             resumeOnError: true
         };
@@ -50,7 +47,6 @@ class AvailExplorerIndexer {
         console.log('=====================================');
         console.log(`📊 Block range: ${this.config.startBlock} → ${this.config.endBlock}`);
         console.log(`⏱️ Request delay: ${this.config.requestDelay}ms`);
-        console.log(`📦 Batch size: ${this.config.batchSize}`);
         console.log('');
 
         this.isRunning = true;
@@ -132,56 +128,42 @@ class AvailExplorerIndexer {
         }
     }
 
-    // Process a range of blocks
+    // Process a range of blocks sequentially
     async processBlockRange(startBlock, endBlock) {
         const totalBlocks = endBlock - startBlock + 1;
-        console.log(`\n🔄 Processing ${totalBlocks} blocks...`);
+        console.log(`\n🔄 Processing ${totalBlocks} blocks sequentially...`);
 
-        let currentBlock = startBlock;
         let previousBlockData = null;
 
-        while (currentBlock <= endBlock && !this.shouldStop) {
-            const batchStart = currentBlock;
-            const batchEnd = Math.min(currentBlock + this.config.batchSize - 1, endBlock);
-            
-            console.log(`\n📦 Processing batch: blocks ${batchStart} → ${batchEnd}`);
-            
-            // Process batch with parallel extraction but sequential storage
-            for (let blockNum = batchStart; blockNum <= batchEnd && !this.shouldStop; blockNum++) {
-                try {
-                    const blockData = await this.processBlock(blockNum, previousBlockData);
-                    previousBlockData = blockData;
-                    this.lastProcessedBlock = blockNum;
-                    
-                    // Progress reporting
-                    const progress = ((blockNum - startBlock + 1) / totalBlocks * 100).toFixed(1);
-                    console.log(`  ✅ Block ${blockNum} processed (${progress}%)`);
-                    
-                } catch (error) {
-                    console.error(`  ❌ Block ${blockNum} failed: ${error.message}`);
-                    this.stats.failedBlocks++;
-                    this.stats.errors.push({
-                        type: 'BLOCK_ERROR',
-                        blockNumber: blockNum,
-                        message: error.message,
-                        timestamp: new Date().toISOString()
-                    });
+        for (let blockNum = startBlock; blockNum <= endBlock && !this.shouldStop; blockNum++) {
+            try {
+                const blockData = await this.processBlock(blockNum, previousBlockData);
+                previousBlockData = blockData;
+                this.lastProcessedBlock = blockNum;
+                
+                // Progress reporting
+                const progress = ((blockNum - startBlock + 1) / totalBlocks * 100).toFixed(1);
+                console.log(`✅ Block ${blockNum} processed (${progress}%)`);
+                
+            } catch (error) {
+                console.error(`❌ Block ${blockNum} failed: ${error.message}`);
+                this.stats.failedBlocks++;
+                this.stats.errors.push({
+                    type: 'BLOCK_ERROR',
+                    blockNumber: blockNum,
+                    message: error.message,
+                    timestamp: new Date().toISOString()
+                });
 
-                    if (!this.config.resumeOnError) {
-                        throw error;
-                    }
-                }
-
-                // Rate limiting
-                if (this.config.requestDelay > 0 && !this.shouldStop) {
-                    await this.sleep(this.config.requestDelay);
+                if (!this.config.resumeOnError) {
+                    throw error;
                 }
             }
 
-            currentBlock = batchEnd + 1;
-
-            // Batch statistics
-            console.log(`📊 Batch completed - Success: ${this.stats.successfulBlocks}, Failed: ${this.stats.failedBlocks}`);
+            // Rate limiting
+            if (this.config.requestDelay > 0 && !this.shouldStop) {
+                await this.sleep(this.config.requestDelay);
+            }
         }
 
         if (this.shouldStop) {
@@ -215,15 +197,10 @@ class AvailExplorerIndexer {
             // Extract comprehensive block data
             const blockData = await this.extractor.extractCompleteBlockData(blockNumber);
             
-            console.log(`  🧮 Calculating analytics for block ${blockNumber}...`);
-            // Calculate analytics and statistics
-            const networkStats = this.analytics.calculateNetworkStatistics(blockData, previousBlockData);
-            const blockAnalytics = this.analytics.calculateBlockAnalytics(blockData, networkStats);
-
             console.log(`  💾 Storing block ${blockNumber} in transaction...`);
             // Store ALL data in single atomic transaction
             await this.database.withTransaction(async (client) => {
-                await this.storeCompleteBlockData(blockData, networkStats, blockAnalytics, client);
+                await this.storeCompleteBlockData(blockData, client);
             });
 
             // Update statistics
@@ -240,7 +217,7 @@ class AvailExplorerIndexer {
     }
 
     // Store complete block data in database within transaction
-    async storeCompleteBlockData(blockData, networkStats, blockAnalytics, client = null) {
+    async storeCompleteBlockData(blockData, client = null) {
         const { header, extrinsics, events, storage, kate, accounts } = blockData;
 
         // 1. Store block header
@@ -251,13 +228,13 @@ class AvailExplorerIndexer {
             stateRoot: header.stateRoot,
             extrinsicsRoot: header.extrinsicsRoot,
             timestamp: blockData.timestamp,
-            authorAccount: networkStats.validators?.blockAuthor,
-            isFinalized: false, // Would need additional logic to determine
+            authorAccount: null, // Basic storage without analytics
+            isFinalized: false,
             extrinsicsCount: extrinsics.length,
             eventsCount: events.length,
-            dataSubmissionsCount: networkStats.dataAvailability?.dataSubmissions || 0,
-            totalFees: networkStats.fees?.totalFees || '0',
-            totalTips: networkStats.fees?.totalTips || '0',
+            dataSubmissionsCount: 0, // Will count from events if needed
+            totalFees: '0', // No fee calculation
+            totalTips: '0', // No tip calculation
             specVersion: blockData.runtime?.runtimeVersion?.specVersion,
             implVersion: blockData.runtime?.runtimeVersion?.implVersion,
             authoringVersion: blockData.runtime?.runtimeVersion?.authoringVersion,
@@ -279,8 +256,8 @@ class AvailExplorerIndexer {
                 blockLength: kate.blockLength.blockLength || 0,
                 commitmentHex: kate.commitmentHex || null,
                 proofData: kate.sampleDataProof || null,
-                utilizationPercentage: networkStats.dataAvailability?.blockUtilization || 0,
-                appDataCount: networkStats.dataAvailability?.uniqueApps || 0
+                utilizationPercentage: 0, // No analytics calculation
+                appDataCount: 0 // No analytics calculation
             };
 
             await this.database.insertKateCommitment(kateData, client);
@@ -413,45 +390,7 @@ class AvailExplorerIndexer {
             await this.database.insertDataSubmission(submissionData, client);
         }
 
-        // 8. Store network statistics
-        const statsData = {
-            blockNumber: header.number,
-            blockHash: blockData.blockHash,
-            blockTimeMs: networkStats.timing?.blockTimeMs,
-            finalizationDelayMs: null,
-            totalExtrinsics: networkStats.block.totalExtrinsics,
-            successfulExtrinsics: networkStats.block.successfulExtrinsics,
-            failedExtrinsics: networkStats.block.failedExtrinsics,
-            totalEvents: networkStats.block.totalEvents,
-            totalFeesCollected: networkStats.fees?.totalFees || '0',
-            totalTipsCollected: networkStats.fees?.totalTips || '0',
-            averageFee: networkStats.fees?.avgFee || '0',
-            totalDataSubmissions: networkStats.dataAvailability?.dataSubmissions || 0,
-            totalDataSize: networkStats.dataAvailability?.totalDataSize || 0,
-            daUtilizationPercentage: networkStats.dataAvailability?.blockUtilization || 0,
-            activeAccounts: networkStats.accounts?.accountActivity?.uniqueSigners || 0,
-            newAccounts: 0, // Would need additional logic
-            totalIssuance: storage?.balances?.totalIssuance || '0',
-            activeValidators: networkStats.validators?.activeValidators
-        };
-
-        await this.database.insertNetworkStatistics(statsData, client);
-
-        // 9. Store block analytics
-        const analyticsData = {
-            blockNumber: header.number,
-            blockHash: blockData.blockHash,
-            tps: blockAnalytics.performance?.tps || 0,
-            bps: blockAnalytics.performance?.bps || 0,
-            feePercentiles: blockAnalytics.fees?.percentiles,
-            gasUsageStats: null, // Avail doesn't use gas
-            appSpaceUtilization: blockAnalytics.dataAvailability?.appDistribution,
-            dataEfficiencyRatio: blockAnalytics.dataAvailability?.efficiency,
-            blockProductionTimeMs: networkStats.timing?.blockTimeMs,
-            validatorPerformance: null
-        };
-
-        await this.database.insertBlockAnalytics(analyticsData, client);
+        // Analytics storage removed - just storing raw blockchain data
     }
 
     // Extract specific event types for specialized storage
@@ -575,14 +514,7 @@ class AvailExplorerIndexer {
             console.log(`${key}: ${value.toLocaleString()}`);
         });
 
-        // Analytics summary
-        const analyticsSummary = this.analytics.getSummaryStatistics();
-        console.log('\n📈 ANALYTICS SUMMARY');
-        console.log('===================');
-        console.log(`Avg block time: ${analyticsSummary.blockProcessing?.avgBlockTime?.toFixed(0)}ms`);
-        console.log(`Fee trend: ${analyticsSummary.fees?.recentTrend}`);
-        console.log(`Avg utilization: ${analyticsSummary.utilization?.avgUtilization?.toFixed(1)}%`);
-        console.log(`Avg DA utilization: ${analyticsSummary.utilization?.avgDAUtilization?.toFixed(1)}%`);
+        // Analytics removed - just basic data extraction and storage
     }
 
     // Utility methods

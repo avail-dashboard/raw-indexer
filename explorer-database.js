@@ -405,73 +405,9 @@ class ExplorerDatabase {
     }
 
     // ================================
-    // ANALYTICS AND STATISTICS
+    // ANALYTICS OPERATIONS REMOVED
     // ================================
-
-    async insertNetworkStatistics(statsData, client = null) {
-        const query = `
-            INSERT INTO network_statistics (
-                block_number, block_hash, block_time_ms, finalization_delay_ms,
-                total_extrinsics, successful_extrinsics, failed_extrinsics, total_events,
-                total_fees_collected, total_tips_collected, average_fee,
-                total_data_submissions, total_data_size, da_utilization_percentage,
-                active_accounts, new_accounts, total_issuance, active_validators
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
-            )
-            RETURNING id;
-        `;
-
-        const params = [
-            this.prepareBigIntValue(statsData.blockNumber),
-            statsData.blockHash,
-            statsData.blockTimeMs || null,
-            statsData.finalizationDelayMs || null,
-            statsData.totalExtrinsics || 0,
-            statsData.successfulExtrinsics || 0,
-            statsData.failedExtrinsics || 0,
-            statsData.totalEvents || 0,
-            this.prepareBigIntValue(statsData.totalFeesCollected || 0),
-            this.prepareBigIntValue(statsData.totalTipsCollected || 0),
-            this.prepareBigIntValue(statsData.averageFee || 0),
-            statsData.totalDataSubmissions || 0,
-            statsData.totalDataSize || 0,
-            statsData.daUtilizationPercentage || 0,
-            statsData.activeAccounts || 0,
-            statsData.newAccounts || 0,
-            this.prepareBigIntValue(statsData.totalIssuance),
-            statsData.activeValidators || null
-        ];
-
-        const result = await this.query(query, params, client);
-        return result.rows[0].id;
-    }
-
-    async insertBlockAnalytics(analyticsData, client = null) {
-        const query = `
-            INSERT INTO block_analytics (
-                block_number, block_hash, tps, bps, fee_percentiles, gas_usage_stats,
-                app_space_utilization, data_efficiency_ratio, block_production_time_ms, validator_performance
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING id;
-        `;
-
-        const params = [
-            this.prepareBigIntValue(analyticsData.blockNumber),
-            analyticsData.blockHash,
-            analyticsData.tps || 0,
-            analyticsData.bps || 0,
-            analyticsData.feePercentiles ? this.safeBigIntStringify(analyticsData.feePercentiles) : null,
-            analyticsData.gasUsageStats ? this.safeBigIntStringify(analyticsData.gasUsageStats) : null,
-            analyticsData.appSpaceUtilization ? this.safeBigIntStringify(analyticsData.appSpaceUtilization) : null,
-            analyticsData.dataEfficiencyRatio || null,
-            analyticsData.blockProductionTimeMs || null,
-            analyticsData.validatorPerformance ? this.safeBigIntStringify(analyticsData.validatorPerformance) : null
-        ];
-
-        const result = await this.query(query, params, client);
-        return result.rows[0].id;
-    }
+    // Analytics functions removed - storing only raw blockchain data
 
     // ================================
     // UTILITY METHODS

@@ -1,12 +1,12 @@
 # Avail DA Explorer Indexer
 
-A comprehensive blockchain indexer for the Avail Data Availability network that extracts complete block data and stores it in PostgreSQL with advanced analytics.
+A blockchain data extraction and storage system for the Avail Data Availability network that extracts complete block data and stores it in PostgreSQL for later analysis.
 
 ## Features
 
-- ✅ **Complete Data Extraction**: 98% of available on-chain data vs previous 20%
+- ✅ **Complete Data Extraction**: 98% of available on-chain data
 - ✅ **Atomic Block-Level Transactions**: Ensures data consistency
-- ✅ **Comprehensive Analytics**: Network statistics, performance metrics, DA utilization
+- ✅ **Raw Data Storage**: Stores blockchain data without processing overhead
 - ✅ **Kate Polynomial Commitments**: Full DA layer integration
 - ✅ **Resume Functionality**: Intelligent restart from last processed block
 - ✅ **Production-Ready**: Error handling, rate limiting, graceful shutdown
@@ -74,14 +74,9 @@ The indexer comprehensively extracts and stores:
 - **Balance History**: Complete balance snapshots per block
 - **Transfer Events**: Detailed transfer tracking with success status
 
-### Analytics & Statistics
-- **Network Statistics**: Block timing, fee collection, transaction success rates
-- **Block Analytics**: TPS, BPS, fee percentiles, DA utilization
-- **Performance Metrics**: Processing times, API call counts, efficiency ratios
-
 ## Database Schema
 
-13 interconnected tables:
+11 core data tables:
 - `block_headers` - Complete block header data
 - `kate_commitments` - DA polynomial commitments  
 - `extrinsic_data` - Transaction details with signatures
@@ -92,8 +87,6 @@ The indexer comprehensively extracts and stores:
 - `transfer_events` - Transfer tracking
 - `data_submissions` - DA data submissions
 - `staking_events` - Validator/staking events
-- `network_statistics` - Network performance metrics
-- `block_analytics` - Advanced analytics per block
 
 ## Configuration
 
@@ -156,8 +149,7 @@ The indexer follows a modular architecture:
 ├── explorer-indexer.js      # Main orchestrator class
 ├── explorer-extractor.js    # Blockchain data extraction engine
 ├── explorer-database.js     # PostgreSQL operations with transaction support
-├── explorer-analytics.js    # Network statistics & performance analytics
-├── explorer-schema.sql      # Complete database schema (13 tables)
+├── explorer-schema.sql      # Complete database schema (11 tables)
 └── README.md               # Documentation
 ```
 
@@ -167,7 +159,7 @@ The indexer follows a modular architecture:
    - Main orchestrator with batch processing
    - Block-level atomic transactions
    - Resume functionality and error handling
-   - Statistics generation and reporting
+   - Raw data storage without analytics overhead
 
 2. **AvailExplorerExtractor** (`explorer-extractor.js`) 
    - Comprehensive blockchain data extraction (60+ RPC methods)
@@ -179,13 +171,7 @@ The indexer follows a modular architecture:
    - Transaction-aware database operations
    - BigInt-safe PostgreSQL operations
    - Connection pooling and health checks
-   - Comprehensive data insertion methods
-
-4. **ExplorerAnalytics** (`explorer-analytics.js`)
-   - Network performance calculations
-   - Fee and utilization statistics
-   - Block-level analytics with historical tracking
-   - DA efficiency and participation metrics
+   - Raw data insertion methods
 
 ## Production Features
 
@@ -219,16 +205,16 @@ The indexer uses atomic block-level transactions instead of partial data handlin
 
 ### Sequential vs Parallel Processing
 Current implementation processes blocks sequentially due to:
-- **Data Dependencies**: Analytics require previous block data for calculations
 - **Account Conflicts**: Multiple blocks might update same accounts simultaneously  
 - **Transaction Isolation**: Parallel transactions could cause deadlocks
 - **RPC Limitations**: Single WebSocket connection per client
+- **Data Consistency**: Ensures clean atomic transactions per block
 
 ## Monitoring & Statistics
 
-The indexer provides comprehensive statistics:
+The indexer provides basic processing statistics:
 - Processing speed (blocks/second)
 - API call counts and efficiency
 - Database insertion metrics
 - Error rates and failure patterns
-- Network utilization and fee trends
+- Simple block processing progress
