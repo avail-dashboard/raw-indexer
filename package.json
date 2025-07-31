@@ -1,0 +1,24 @@
+{
+  "name": "avail-indexer",
+  "version": "1.0.0",
+  "description": "Avail blockchain indexer to PostgreSQL",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "schema": "psql -h $DB_HOST -U $DB_USER -d $DB_DATABASE -f schema.sql"
+  },
+  "dependencies": {
+    "@polkadot/api": "^10.11.2",
+    "avail-js-sdk": "^0.4.2",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3"
+  },
+  "keywords": [
+    "avail",
+    "blockchain",
+    "indexer",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "MIT"
+}
