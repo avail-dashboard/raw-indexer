@@ -2,10 +2,10 @@
   "name": "avail-indexer",
   "version": "1.0.0",
   "description": "Avail blockchain indexer to PostgreSQL",
-  "main": "index.js",
+  "main": "explorer-indexer.js",
   "scripts": {
-    "start": "node index.js",
-    "schema": "psql -h $DB_HOST -U $DB_USER -d $DB_DATABASE -f schema.sql"
+    "start": "node explorer-indexer.js",
+    "schema": "psql -h $DB_HOST -U $DB_USER -d $DB_DATABASE -f explorer-schema.sql"
   },
   "dependencies": {
     "@polkadot/api": "^10.11.2",
