@@ -311,7 +311,7 @@ class AvailExplorerIndexer {
             });
         }
 
-        // 4. Store events in parallel batch
+        // 4. Store events using batch insertion
         const eventIds = {};
         
         if (events.length > 0) {
@@ -333,11 +333,8 @@ class AvailExplorerIndexer {
                 };
             });
 
-            // Execute all event inserts in parallel
-            const eventPromises = eventDataArray.map(data => 
-                this.database.insertEvent(data, client)
-            );
-            const eventResults = await Promise.all(eventPromises);
+            // Execute batch event insertion (single query for all events)
+            const eventResults = await this.database.insertEventsBatch(eventDataArray, client);
 
             // Map results back to event indices
             events.forEach((event, i) => {

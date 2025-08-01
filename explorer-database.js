@@ -16,7 +16,7 @@ class ExplorerDatabase {
             min: parseInt(process.env.DB_POOL_MIN) || 1,
             idleTimeoutMillis: parseInt(process.env.DB_POOL_IDLE_TIMEOUT) || 30000,
             connectionTimeoutMillis: 30000,
-            query_timeout: 60000
+            query_timeout: 300000
         });
 
         this.pool.on('error', (err) => {
@@ -235,6 +235,53 @@ class ExplorerDatabase {
 
         const result = await this.query(query, params, client);
         return result.rows[0].id;
+    }
+
+    async insertEventsBatch(eventsDataArray, client = null) {
+        if (!eventsDataArray || eventsDataArray.length === 0) {
+            return [];
+        }
+
+        // Build batch INSERT query with VALUES for all events
+        const valueGroups = [];
+        const allParams = [];
+        let paramIndex = 1;
+
+        for (const eventData of eventsDataArray) {
+            const params = [
+                eventData.blockHash,
+                this.prepareBigIntValue(eventData.blockNumber),
+                eventData.eventIndex,
+                eventData.extrinsicId || null,
+                eventData.extrinsicIndex || null,
+                eventData.phaseType || null,
+                eventData.phaseValue || null,
+                eventData.pallet,
+                eventData.eventName,
+                eventData.topics || [],
+                eventData.rawData ? this.safeBigIntStringify(eventData.rawData) : null
+            ];
+
+            allParams.push(...params);
+            
+            // Create parameter placeholders for this event (11 params)
+            const placeholders = [];
+            for (let i = 0; i < 11; i++) {
+                placeholders.push(`$${paramIndex++}`);
+            }
+            valueGroups.push(`(${placeholders.join(', ')})`);
+        }
+
+        const query = `
+            INSERT INTO event_data (
+                block_hash, block_number, event_index, extrinsic_id, extrinsic_index,
+                phase_type, phase_value, pallet, event_name, topics, raw_data
+            ) VALUES ${valueGroups.join(', ')}
+            RETURNING id;
+        `;
+
+        const result = await this.query(query, allParams, client);
+        return result.rows.map(row => row.id);
     }
 
     // linkExtrinsicEvent removed: use event_data.extrinsic_id foreign key instead
