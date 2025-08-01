@@ -215,7 +215,28 @@ class ExplorerDatabase {
             return [];
         }
 
-        // Build batch INSERT query with VALUES for all extrinsics
+        // PostgreSQL parameter limit safety: chunk large batches
+        const CHUNK_SIZE = 1000; // Safe limit: 1000 extrinsics * 16 params = 16,000 params
+        
+        if (extrinsicsDataArray.length > CHUNK_SIZE) {
+            console.log(`      📦 Chunking ${extrinsicsDataArray.length} extrinsics into batches of ${CHUNK_SIZE}`);
+            const allResults = [];
+            
+            for (let i = 0; i < extrinsicsDataArray.length; i += CHUNK_SIZE) {
+                const chunk = extrinsicsDataArray.slice(i, i + CHUNK_SIZE);
+                console.log(`         Processing chunk ${Math.floor(i/CHUNK_SIZE) + 1}/${Math.ceil(extrinsicsDataArray.length/CHUNK_SIZE)} (${chunk.length} extrinsics)`);
+                const chunkResults = await this.insertExtrinsicsBatchChunk(chunk, client);
+                allResults.push(...chunkResults);
+            }
+            
+            return allResults;
+        }
+        
+        return await this.insertExtrinsicsBatchChunk(extrinsicsDataArray, client);
+    }
+
+    async insertExtrinsicsBatchChunk(extrinsicsDataArray, client = null) {
+        // Build batch INSERT query with VALUES for extrinsics chunk
         const valueGroups = [];
         const allParams = [];
         let paramIndex = 1;
@@ -296,7 +317,28 @@ class ExplorerDatabase {
             return [];
         }
 
-        // Build batch INSERT query with VALUES for all events
+        // PostgreSQL parameter limit safety: chunk large batches
+        const CHUNK_SIZE = 1000; // Safe limit: 1000 events * 11 params = 11,000 params (well under 32K limit)
+        
+        if (eventsDataArray.length > CHUNK_SIZE) {
+            console.log(`      📦 Chunking ${eventsDataArray.length} events into batches of ${CHUNK_SIZE}`);
+            const allResults = [];
+            
+            for (let i = 0; i < eventsDataArray.length; i += CHUNK_SIZE) {
+                const chunk = eventsDataArray.slice(i, i + CHUNK_SIZE);
+                console.log(`         Processing chunk ${Math.floor(i/CHUNK_SIZE) + 1}/${Math.ceil(eventsDataArray.length/CHUNK_SIZE)} (${chunk.length} events)`);
+                const chunkResults = await this.insertEventsBatchChunk(chunk, client);
+                allResults.push(...chunkResults);
+            }
+            
+            return allResults;
+        }
+        
+        return await this.insertEventsBatchChunk(eventsDataArray, client);
+    }
+
+    async insertEventsBatchChunk(eventsDataArray, client = null) {
+        // Build batch INSERT query with VALUES for events chunk
         const valueGroups = [];
         const allParams = [];
         let paramIndex = 1;
@@ -411,7 +453,28 @@ class ExplorerDatabase {
             return [];
         }
 
-        // Build batch UPSERT query with VALUES for all accounts
+        // PostgreSQL parameter limit safety: chunk large batches
+        const CHUNK_SIZE = 2000; // Safe limit: 2000 accounts * 10 params = 20,000 params
+        
+        if (accountDataArray.length > CHUNK_SIZE) {
+            console.log(`      📦 Chunking ${accountDataArray.length} accounts into batches of ${CHUNK_SIZE}`);
+            const allResults = [];
+            
+            for (let i = 0; i < accountDataArray.length; i += CHUNK_SIZE) {
+                const chunk = accountDataArray.slice(i, i + CHUNK_SIZE);
+                console.log(`         Processing chunk ${Math.floor(i/CHUNK_SIZE) + 1}/${Math.ceil(accountDataArray.length/CHUNK_SIZE)} (${chunk.length} accounts)`);
+                const chunkResults = await this.upsertAccountProfilesBatchChunk(chunk, client);
+                allResults.push(...chunkResults);
+            }
+            
+            return allResults;
+        }
+        
+        return await this.upsertAccountProfilesBatchChunk(accountDataArray, client);
+    }
+
+    async upsertAccountProfilesBatchChunk(accountDataArray, client = null) {
+        // Build batch UPSERT query with VALUES for accounts chunk
         const valueGroups = [];
         const allParams = [];
         let paramIndex = 1;
@@ -465,7 +528,28 @@ class ExplorerDatabase {
             return [];
         }
 
-        // Build batch INSERT query with VALUES for all balance entries
+        // PostgreSQL parameter limit safety: chunk large batches
+        const CHUNK_SIZE = 2000; // Safe limit: 2000 balances * 12 params = 24,000 params
+        
+        if (balanceDataArray.length > CHUNK_SIZE) {
+            console.log(`      📦 Chunking ${balanceDataArray.length} balance entries into batches of ${CHUNK_SIZE}`);
+            const allResults = [];
+            
+            for (let i = 0; i < balanceDataArray.length; i += CHUNK_SIZE) {
+                const chunk = balanceDataArray.slice(i, i + CHUNK_SIZE);
+                console.log(`         Processing chunk ${Math.floor(i/CHUNK_SIZE) + 1}/${Math.ceil(balanceDataArray.length/CHUNK_SIZE)} (${chunk.length} balance entries)`);
+                const chunkResults = await this.insertBalanceHistoryBatchChunk(chunk, client);
+                allResults.push(...chunkResults);
+            }
+            
+            return allResults;
+        }
+        
+        return await this.insertBalanceHistoryBatchChunk(balanceDataArray, client);
+    }
+
+    async insertBalanceHistoryBatchChunk(balanceDataArray, client = null) {
+        // Build batch INSERT query with VALUES for balance entries chunk
         const valueGroups = [];
         const allParams = [];
         let paramIndex = 1;
