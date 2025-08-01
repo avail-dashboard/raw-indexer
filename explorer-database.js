@@ -210,6 +210,60 @@ class ExplorerDatabase {
         return result.rows[0].id;
     }
 
+    async insertExtrinsicsBatch(extrinsicsDataArray, client = null) {
+        if (!extrinsicsDataArray || extrinsicsDataArray.length === 0) {
+            return [];
+        }
+
+        // Build batch INSERT query with VALUES for all extrinsics
+        const valueGroups = [];
+        const allParams = [];
+        let paramIndex = 1;
+
+        for (const extrinsicData of extrinsicsDataArray) {
+            const params = [
+                extrinsicData.blockHash,
+                this.prepareBigIntValue(extrinsicData.blockNumber),
+                extrinsicData.extrinsicIndex,
+                extrinsicData.extrinsicHash,
+                extrinsicData.isSigned,
+                extrinsicData.signerAccount || null,
+                extrinsicData.methodPallet,
+                extrinsicData.methodName,
+                this.prepareBigIntValue(extrinsicData.nonce),
+                this.prepareBigIntValue(extrinsicData.tip || 0),
+                this.prepareBigIntValue(extrinsicData.fee || 0),
+                extrinsicData.success !== undefined ? extrinsicData.success : null,
+                extrinsicData.errorMessage || null,
+                extrinsicData.methodArgs ? this.safeBigIntStringify(extrinsicData.methodArgs) : null,
+                extrinsicData.rawHex || null,
+                extrinsicData.lengthBytes || null
+            ];
+
+            allParams.push(...params);
+            
+            // Create parameter placeholders for this extrinsic (16 params)
+            const placeholders = [];
+            for (let i = 0; i < 16; i++) {
+                placeholders.push(`$${paramIndex++}`);
+            }
+            valueGroups.push(`(${placeholders.join(', ')})`);
+        }
+
+        const query = `
+            INSERT INTO extrinsic_data (
+                block_hash, block_number, extrinsic_index, extrinsic_hash,
+                is_signed, signer_account, method_pallet, method_name,
+                nonce, tip, fee, success, error_message,
+                method_args, raw_hex, length_bytes
+            ) VALUES ${valueGroups.join(', ')}
+            RETURNING id;
+        `;
+
+        const result = await this.query(query, allParams, client);
+        return result.rows.map(row => row.id);
+    }
+
     async insertEvent(eventData, client = null) {
         const query = `
             INSERT INTO event_data (
@@ -350,6 +404,108 @@ class ExplorerDatabase {
 
         const result = await this.query(query, params, client);
         return result.rows[0].id;
+    }
+
+    async upsertAccountProfilesBatch(accountDataArray, client = null) {
+        if (!accountDataArray || accountDataArray.length === 0) {
+            return [];
+        }
+
+        // Build batch UPSERT query with VALUES for all accounts
+        const valueGroups = [];
+        const allParams = [];
+        let paramIndex = 1;
+
+        for (const accountData of accountDataArray) {
+            const params = [
+                accountData.accountId,
+                accountData.displayName || null,
+                accountData.identityJudgement || null,
+                accountData.isValidator || false,
+                accountData.isNominator || false,
+                this.prepareBigIntValue(accountData.currentNonce || 0),
+                this.prepareBigIntValue(accountData.firstSeenBlock),
+                accountData.firstSeenTimestamp || null,
+                this.prepareBigIntValue(accountData.lastActivityBlock),
+                accountData.lastActivityTimestamp || null
+            ];
+
+            allParams.push(...params);
+            
+            // Create parameter placeholders for this account (10 params)
+            const placeholders = [];
+            for (let i = 0; i < 10; i++) {
+                placeholders.push(`$${paramIndex++}`);
+            }
+            valueGroups.push(`(${placeholders.join(', ')})`);
+        }
+
+        const query = `
+            INSERT INTO account_profiles (
+                account_id, display_name, identity_judgement, is_validator, is_nominator,
+                current_nonce, first_seen_block, first_seen_timestamp, last_activity_block, last_activity_timestamp
+            ) VALUES ${valueGroups.join(', ')}
+            ON CONFLICT (account_id) DO UPDATE SET
+                display_name = COALESCE(EXCLUDED.display_name, account_profiles.display_name),
+                identity_judgement = COALESCE(EXCLUDED.identity_judgement, account_profiles.identity_judgement),
+                is_validator = EXCLUDED.is_validator,
+                is_nominator = EXCLUDED.is_nominator,
+                current_nonce = EXCLUDED.current_nonce,
+                last_activity_block = EXCLUDED.last_activity_block,
+                last_activity_timestamp = EXCLUDED.last_activity_timestamp
+            RETURNING id;
+        `;
+
+        const result = await this.query(query, allParams, client);
+        return result.rows.map(row => row.id);
+    }
+
+    async insertBalanceHistoryBatch(balanceDataArray, client = null) {
+        if (!balanceDataArray || balanceDataArray.length === 0) {
+            return [];
+        }
+
+        // Build batch INSERT query with VALUES for all balance entries
+        const valueGroups = [];
+        const allParams = [];
+        let paramIndex = 1;
+
+        for (const balanceData of balanceDataArray) {
+            const params = [
+                balanceData.accountId,
+                balanceData.blockHash,
+                this.prepareBigIntValue(balanceData.blockNumber),
+                this.prepareBigIntValue(balanceData.balanceFree),
+                this.prepareBigIntValue(balanceData.balanceReserved),
+                this.prepareBigIntValue(balanceData.balanceFrozen || 0),
+                this.prepareBigIntValue(balanceData.nonce),
+                this.prepareBigIntValue(balanceData.consumers || 0),
+                this.prepareBigIntValue(balanceData.providers || 0),
+                this.prepareBigIntValue(balanceData.sufficients || 0),
+                this.prepareBigIntValue(balanceData.freeChange || 0),
+                this.prepareBigIntValue(balanceData.reservedChange || 0)
+            ];
+
+            allParams.push(...params);
+            
+            // Create parameter placeholders for this balance entry (12 params)
+            const placeholders = [];
+            for (let i = 0; i < 12; i++) {
+                placeholders.push(`$${paramIndex++}`);
+            }
+            valueGroups.push(`(${placeholders.join(', ')})`);
+        }
+
+        const query = `
+            INSERT INTO balance_history (
+                account_id, block_hash, block_number, balance_free, balance_reserved, balance_frozen,
+                nonce, consumers, providers, sufficients, free_change, reserved_change
+            ) VALUES ${valueGroups.join(', ')}
+            RETURNING id;
+        `;
+
+        const result = await this.query(query, allParams, client);
+        return result.rows.map(row => row.id);
     }
 
     // ================================

@@ -276,7 +276,7 @@ class AvailExplorerIndexer {
         // Execute independent inserts in parallel
         await Promise.all(independentInserts);
 
-        // 3. Store extrinsics in parallel batch
+        // 3. Store extrinsics using batch insertion
         const extrinsicIds = {};
         
         if (extrinsics.length > 0) {
@@ -299,11 +299,8 @@ class AvailExplorerIndexer {
                 lengthBytes: ext.length
             }));
 
-            // Execute all extrinsic inserts in parallel
-            const extrinsicPromises = extrinsicDataArray.map(data => 
-                this.database.insertExtrinsic(data, client)
-            );
-            const extrinsicResults = await Promise.all(extrinsicPromises);
+            // Execute batch extrinsic insertion (single query for all extrinsics)
+            const extrinsicResults = await this.database.insertExtrinsicsBatch(extrinsicDataArray, client);
 
             // Map results back to extrinsic indices
             extrinsics.forEach((ext, i) => {
@@ -344,43 +341,39 @@ class AvailExplorerIndexer {
             // Extrinsic-event linking removed: relationships stored via event_data.extrinsic_id
         }
 
-        // 5. Store account data in parallel batches
+        // 5. Store account data using batch operations
         if (accounts && accounts.accounts && accounts.accounts.length > 0) {
-            // Process all accounts in parallel
-            const accountPromises = accounts.accounts.map(account => {
-                const accountProfileData = {
-                    accountId: account.accountId,
-                    currentNonce: account.nonce,
-                    isValidator: false, // Would need additional logic
-                    isNominator: false,
-                    firstSeenBlock: header.number,
-                    firstSeenTimestamp: blockData.timestamp,
-                    lastActivityBlock: header.number,
-                    lastActivityTimestamp: blockData.timestamp
-                };
+            // Prepare all account profile data
+            const accountProfilesData = accounts.accounts.map(account => ({
+                accountId: account.accountId,
+                currentNonce: account.nonce,
+                isValidator: false, // Would need additional logic
+                isNominator: false,
+                firstSeenBlock: header.number,
+                firstSeenTimestamp: blockData.timestamp,
+                lastActivityBlock: header.number,
+                lastActivityTimestamp: blockData.timestamp
+            }));
 
-                const balanceHistoryData = {
-                    accountId: account.accountId,
-                    blockHash: blockData.blockHash,
-                    blockNumber: header.number,
-                    balanceFree: account.balance.free,
-                    balanceReserved: account.balance.reserved,
-                    balanceFrozen: account.balance.frozen,
-                    nonce: account.nonce,
-                    consumers: account.consumers,
-                    providers: account.providers,
-                    sufficients: 0 // Would need to extract from storage
-                };
+            // Prepare all balance history data
+            const balanceHistoryData = accounts.accounts.map(account => ({
+                accountId: account.accountId,
+                blockHash: blockData.blockHash,
+                blockNumber: header.number,
+                balanceFree: account.balance.free,
+                balanceReserved: account.balance.reserved,
+                balanceFrozen: account.balance.frozen,
+                nonce: account.nonce,
+                consumers: account.consumers,
+                providers: account.providers,
+                sufficients: 0 // Would need to extract from storage
+            }));
 
-                // Execute both account operations in parallel for each account
-                return Promise.all([
-                    this.database.upsertAccountProfile(accountProfileData, client),
-                    this.database.insertBalanceHistory(balanceHistoryData, client)
-                ]);
-            });
-
-            // Execute all account operations in parallel
-            await Promise.all(accountPromises);
+            // Execute batch operations in parallel
+            await Promise.all([
+                this.database.upsertAccountProfilesBatch(accountProfilesData, client),
+                this.database.insertBalanceHistoryBatch(balanceHistoryData, client)
+            ]);
         }
 
         // 6. Store transfer events
