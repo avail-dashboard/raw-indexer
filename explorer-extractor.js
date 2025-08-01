@@ -14,10 +14,17 @@ class AvailExplorerExtractor {
             blockProcessingTime: {}
         };
         
-        // Rate limiter: 500ms between API calls
-        this.limiter = new Bottleneck({
-            minTime: parseInt(process.env.REQUEST_DELAY) || 500
-        });
+        // Rate limiter: only enabled if REQUEST_DELAY is set
+        if (process.env.REQUEST_DELAY) {
+            this.limiter = new Bottleneck({
+                minTime: parseInt(process.env.REQUEST_DELAY)
+            });
+        } else {
+            // No rate limiting - create a pass-through scheduler
+            this.limiter = {
+                schedule: (fn) => fn()
+            };
+        }
     }
 
     async connect() {
@@ -319,7 +326,7 @@ class AvailExplorerExtractor {
             // Balances storage
             console.log('    💰 Balances storage...');
             if (this.api.query.balances) {
-                const totalIssuance = await this.api.query.balances.totalIssuance.at(blockHash);
+                const totalIssuance = await this.limiter.schedule(() => this.api.query.balances.totalIssuance.at(blockHash));
                 this.extractionStats.totalApiCalls++;
 
                 storageData.balances = {
@@ -337,11 +344,11 @@ class AvailExplorerExtractor {
                     for (let page = 0; page < maxPages; page++) {
                         console.log(`      💰 Loading balance page ${page + 1}/${maxPages}...`);
                         
-                        const pageBalances = await this.api.query.balances.account.entriesPaged({
+                        const pageBalances = await this.limiter.schedule(() => this.api.query.balances.account.entriesPaged({
                             args: [],
                             pageSize: pageSize,
                             startKey: startKey
-                        }, blockHash);
+                        }, blockHash));
                         
                         this.extractionStats.totalApiCalls++;
                         
@@ -391,9 +398,9 @@ class AvailExplorerExtractor {
                 try {
                     // Execute all DA queries in parallel
                     const [nextAppId, appKeys, submissions] = await Promise.all([
-                        this.api.query.dataAvailability.nextAppId.at(blockHash),
-                        this.api.query.dataAvailability.appKeys.entriesAt(blockHash),
-                        this.api.query.dataAvailability.dataSubmissions?.entriesAt(blockHash) || Promise.resolve([])
+                        this.limiter.schedule(() => this.api.query.dataAvailability.nextAppId.at(blockHash)),
+                        this.limiter.schedule(() => this.api.query.dataAvailability.appKeys.entriesAt(blockHash)),
+                        this.limiter.schedule(() => this.api.query.dataAvailability.dataSubmissions?.entriesAt(blockHash) || Promise.resolve([]))
                     ]);
                     
                     this.extractionStats.totalApiCalls += 3;
@@ -427,7 +434,7 @@ class AvailExplorerExtractor {
             // Session storage (if available)
             if (this.api.query.session) {
                 try {
-                    const validators = await this.api.query.session.validators.at(blockHash);
+                    const validators = await this.limiter.schedule(() => this.api.query.session.validators.at(blockHash));
                     this.extractionStats.totalApiCalls++;
                     storageData.session = {
                         validators: validators.map(v => v.toString()),
@@ -442,7 +449,7 @@ class AvailExplorerExtractor {
             // Staking storage (if available)
             if (this.api.query.staking) {
                 try {
-                    const currentEra = await this.api.query.staking.currentEra.at(blockHash);
+                    const currentEra = await this.limiter.schedule(() => this.api.query.staking.currentEra.at(blockHash));
                     this.extractionStats.totalApiCalls++;
                     storageData.staking = {
                         currentEra: currentEra ? this.safeBigIntValue(currentEra) : null
@@ -467,9 +474,9 @@ class AvailExplorerExtractor {
             if (this.api.rpc.kate) {
                 // Execute all Kate RPC calls in parallel
                 const [blockLength, dataProof, rowData] = await Promise.all([
-                    this.api.rpc.kate.blockLength(blockHash),
-                    this.api.rpc.kate.queryDataProof(0, blockHash).catch(e => ({ error: e.message })),
-                    this.api.rpc.kate.queryRows([0], blockHash).catch(e => ({ error: e.message }))
+                    this.limiter.schedule(() => this.api.rpc.kate.blockLength(blockHash)),
+                    this.limiter.schedule(() => this.api.rpc.kate.queryDataProof(0, blockHash).catch(e => ({ error: e.message })),
+                    this.limiter.schedule(() => this.api.rpc.kate.queryRows([0], blockHash).catch(e => ({ error: e.message }))
                 ]);
                 
                 this.extractionStats.totalApiCalls += 3;
@@ -530,11 +537,11 @@ class AvailExplorerExtractor {
                 for (let page = 0; page < maxPages; page++) {
                     console.log(`      👥 Loading account analysis page ${page + 1}/${maxPages}...`);
                     
-                    const pageAccounts = await this.api.query.system.account.entriesPaged({
+                    const pageAccounts = await this.limiter.schedule(() => this.api.query.system.account.entriesPaged({
                         args: [],
                         pageSize: pageSize,
                         startKey: startKey
-                    }, blockHash);
+                    }, blockHash));
                     
                     this.extractionStats.totalApiCalls++;
                     
@@ -702,7 +709,7 @@ class AvailExplorerExtractor {
     // Extract comprehensive metadata about the blockchain state
     async extractMetadata(blockHash) {
         try {
-            const metadata = await this.api.rpc.state.getMetadata(blockHash);
+            const metadata = await this.limiter.schedule(() => this.api.rpc.state.getMetadata(blockHash));
             this.extractionStats.totalApiCalls++;
 
             return {
