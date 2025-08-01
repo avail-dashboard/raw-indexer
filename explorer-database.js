@@ -180,9 +180,9 @@ class ExplorerDatabase {
                 block_hash, block_number, extrinsic_index, extrinsic_hash,
                 is_signed, signer_account, method_pallet, method_name,
                 nonce, tip, fee, success, error_message,
-                method_args, signature_data, era_data, raw_hex, length_bytes
+                method_args, raw_hex, length_bytes
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
             )
             RETURNING id;
         `;
@@ -202,8 +202,6 @@ class ExplorerDatabase {
             extrinsicData.success !== undefined ? extrinsicData.success : null,
             extrinsicData.errorMessage || null,
             extrinsicData.methodArgs ? this.safeBigIntStringify(extrinsicData.methodArgs) : null,
-            extrinsicData.signatureData ? this.safeBigIntStringify(extrinsicData.signatureData) : null,
-            extrinsicData.eraData ? this.safeBigIntStringify(extrinsicData.eraData) : null,
             extrinsicData.rawHex || null,
             extrinsicData.lengthBytes || null
         ];
@@ -216,8 +214,8 @@ class ExplorerDatabase {
         const query = `
             INSERT INTO event_data (
                 block_hash, block_number, event_index, extrinsic_id, extrinsic_index,
-                phase_type, phase_value, pallet, event_name, event_data, topics, raw_data
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                phase_type, phase_value, pallet, event_name, topics, raw_data
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id;
         `;
 
@@ -231,7 +229,6 @@ class ExplorerDatabase {
             eventData.phaseValue || null,
             eventData.pallet,
             eventData.eventName,
-            eventData.eventData ? this.safeBigIntStringify(eventData.eventData) : null,
             eventData.topics || [],
             eventData.rawData ? this.safeBigIntStringify(eventData.rawData) : null
         ];
@@ -240,14 +237,7 @@ class ExplorerDatabase {
         return result.rows[0].id;
     }
 
-    async linkExtrinsicEvent(extrinsicId, eventId, client = null) {
-        const query = `
-            INSERT INTO extrinsic_events (extrinsic_id, event_id)
-            VALUES ($1, $2)
-            ON CONFLICT (extrinsic_id, event_id) DO NOTHING;
-        `;
-        await this.query(query, [extrinsicId, eventId], client);
-    }
+    // linkExtrinsicEvent removed: use event_data.extrinsic_id foreign key instead
 
     // ================================
     // ACCOUNT AND BALANCE MANAGEMENT
@@ -257,18 +247,14 @@ class ExplorerDatabase {
         const query = `
             INSERT INTO account_profiles (
                 account_id, display_name, identity_judgement, is_validator, is_nominator,
-                current_nonce, current_balance_free, current_balance_reserved, current_balance_frozen,
-                first_seen_block, first_seen_timestamp, last_activity_block, last_activity_timestamp
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                current_nonce, first_seen_block, first_seen_timestamp, last_activity_block, last_activity_timestamp
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (account_id) DO UPDATE SET
                 display_name = COALESCE(EXCLUDED.display_name, account_profiles.display_name),
                 identity_judgement = COALESCE(EXCLUDED.identity_judgement, account_profiles.identity_judgement),
                 is_validator = EXCLUDED.is_validator,
                 is_nominator = EXCLUDED.is_nominator,
                 current_nonce = EXCLUDED.current_nonce,
-                current_balance_free = EXCLUDED.current_balance_free,
-                current_balance_reserved = EXCLUDED.current_balance_reserved,
-                current_balance_frozen = EXCLUDED.current_balance_frozen,
                 last_activity_block = EXCLUDED.last_activity_block,
                 last_activity_timestamp = EXCLUDED.last_activity_timestamp
             RETURNING id;
@@ -281,9 +267,6 @@ class ExplorerDatabase {
             accountData.isValidator || false,
             accountData.isNominator || false,
             this.prepareBigIntValue(accountData.currentNonce || 0),
-            this.prepareBigIntValue(accountData.currentBalanceFree || 0),
-            this.prepareBigIntValue(accountData.currentBalanceReserved || 0),
-            this.prepareBigIntValue(accountData.currentBalanceFrozen || 0),
             this.prepareBigIntValue(accountData.firstSeenBlock),
             accountData.firstSeenTimestamp || null,
             this.prepareBigIntValue(accountData.lastActivityBlock),

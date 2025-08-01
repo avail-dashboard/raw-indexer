@@ -134,10 +134,9 @@ CREATE TABLE extrinsic_data (
     success BOOLEAN,
     error_message TEXT,
     
-    -- Data and signatures
+    -- Data and signatures  
     method_args JSONB,
-    signature_data JSONB,
-    era_data JSONB,
+    -- signature_data, era_data removed: parse from raw_hex when needed
     
     -- Raw data for reconstruction
     raw_hex TEXT,
@@ -165,7 +164,7 @@ CREATE TABLE event_data (
     -- Event details
     pallet VARCHAR(50) NOT NULL,
     event_name VARCHAR(50) NOT NULL,
-    event_data JSONB,
+    -- event_data removed: parse from raw_data when needed  
     topics TEXT[],
     
     -- Event raw data
@@ -177,12 +176,7 @@ CREATE TABLE event_data (
     UNIQUE(block_hash, event_index)
 );
 
--- Link extrinsics to their events
-CREATE TABLE extrinsic_events (
-    extrinsic_id INTEGER REFERENCES extrinsic_data(id),
-    event_id INTEGER REFERENCES event_data(id),
-    PRIMARY KEY (extrinsic_id, event_id)
-);
+-- Extrinsic-event linking removed: use event_data.extrinsic_id foreign key
 
 -- ================================
 -- ACCOUNT AND BALANCE MANAGEMENT
@@ -201,9 +195,6 @@ CREATE TABLE account_profiles (
     
     -- Current state (updated per block)
     current_nonce NUMERIC(39,0) DEFAULT 0,
-    current_balance_free NUMERIC(39,0) DEFAULT 0,
-    current_balance_reserved NUMERIC(39,0) DEFAULT 0,
-    current_balance_frozen NUMERIC(39,0) DEFAULT 0,
     
     -- Statistics
     total_extrinsics_sent INTEGER DEFAULT 0,

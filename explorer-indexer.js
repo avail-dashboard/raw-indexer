@@ -298,8 +298,6 @@ class AvailExplorerIndexer {
                 fee: 0, // Would need to extract from events
                 success: this.determineExtrinsicSuccess(ext.index, events),
                 methodArgs: ext.method.args,
-                signatureData: ext.signature,
-                eraData: ext.signature?.era,
                 rawHex: ext.rawHex,
                 lengthBytes: ext.length
             }));
@@ -333,7 +331,6 @@ class AvailExplorerIndexer {
                     phaseValue: this.getPhaseValue(event.phase),
                     pallet: event.pallet,
                     eventName: event.eventName,
-                    eventData: event.data,
                     topics: event.topics,
                     rawData: event.rawData
                 };
@@ -350,19 +347,7 @@ class AvailExplorerIndexer {
                 eventIds[event.index] = eventResults[i];
             });
 
-            // Link extrinsics to events in parallel batch
-            const linkingPromises = [];
-            eventDataArray.forEach((eventData, i) => {
-                if (eventData.extrinsicId) {
-                    linkingPromises.push(
-                        this.database.linkExtrinsicEvent(eventData.extrinsicId, eventResults[i], client)
-                    );
-                }
-            });
-
-            if (linkingPromises.length > 0) {
-                await Promise.all(linkingPromises);
-            }
+            // Extrinsic-event linking removed: relationships stored via event_data.extrinsic_id
         }
 
         // 5. Store account data in parallel batches
@@ -372,9 +357,6 @@ class AvailExplorerIndexer {
                 const accountProfileData = {
                     accountId: account.accountId,
                     currentNonce: account.nonce,
-                    currentBalanceFree: account.balance.free,
-                    currentBalanceReserved: account.balance.reserved,
-                    currentBalanceFrozen: account.balance.frozen,
                     isValidator: false, // Would need additional logic
                     isNominator: false,
                     firstSeenBlock: header.number,
