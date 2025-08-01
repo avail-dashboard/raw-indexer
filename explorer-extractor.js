@@ -42,8 +42,8 @@ class AvailExplorerExtractor {
             }
             return BigInt(0);
         } catch (error) {
-            console.warn(`⚠️ BigInt conversion failed for ${value}: ${error.message}`);
-            return BigInt(0);
+            console.error(`❌ BigInt conversion failed for ${value}: ${error.message}`);
+            throw error;
         }
     }
 
@@ -75,8 +75,8 @@ class AvailExplorerExtractor {
                 return value;
             }));
         } catch (error) {
-            console.warn(`⚠️ JSON serialization failed for ${label}: ${error.message}`);
-            return { error: error.message, type: typeof obj };
+            console.error(`❌ JSON serialization failed for ${label}: ${error.message}`);
+            throw error;
         }
     }
 
@@ -106,19 +106,15 @@ class AvailExplorerExtractor {
                 this.extractRuntimeData(blockHash)
             ]);
 
-            // Storage state extraction
-            console.log('  🗄️ Extracting storage state...');
-            const storageData = await this.extractStorageState(blockHash, blockNumber);
+            // Parallel extraction of storage, Kate, and account data
+            console.log('  🚀 Extracting storage, Kate, and account data in parallel...');
+            const [storageData, kateData, accountData] = await Promise.all([
+                this.extractStorageState(blockHash, blockNumber),
+                this.extractKateData(blockHash),
+                this.extractAccountData(blockHash)
+            ]);
 
-            // Kate DA extraction
-            console.log('  🔗 Extracting Kate DA data...');
-            const kateData = await this.extractKateData(blockHash);
-
-            // Account and balance extraction
-            console.log('  👥 Extracting account data...');
-            const accountData = await this.extractAccountData(blockHash);
-
-            // Network statistics
+            // Network statistics (can be calculated after we have the data)
             console.log('  📊 Calculating network statistics...');
             const networkStats = await this.calculateNetworkStatistics(blockData, eventsData, accountData);
 
@@ -230,8 +226,8 @@ class AvailExplorerExtractor {
                 properties: properties ? this.safeJsonData(properties, 'properties') : null
             };
         } catch (error) {
-            console.warn(`⚠️ Runtime data extraction failed: ${error.message}`);
-            return { error: error.message };
+            console.error(`❌ Runtime data extraction failed: ${error.message}`);
+            throw error;
         }
     }
 
@@ -240,13 +236,59 @@ class AvailExplorerExtractor {
         const storageData = {};
 
         try {
-            // System storage
+            // System storage - with pagination
             console.log('    📋 System storage...');
-            const systemAccounts = await this.api.query.system.account.entriesAt(blockHash);
+            
+            const pageSize = parseInt(process.env.ACCOUNT_PAGE_SIZE) || 1000;
+            const maxPages = parseInt(process.env.MAX_ACCOUNT_PAGES) || 10;
+            let allAccounts = [];
+            let totalPages = 0;
+            
+            try {
+                // Use pagination to get accounts in chunks
+                let startKey = null;
+                
+                for (let page = 0; page < maxPages; page++) {
+                    console.log(`      📄 Loading account page ${page + 1}/${maxPages}...`);
+                    
+                    const pageAccounts = await this.api.query.system.account.entriesPaged({
+                        args: [],
+                        pageSize: pageSize,
+                        startKey: startKey
+                    }, blockHash);
+                    
+                    this.extractionStats.totalApiCalls++;
+                    
+                    if (pageAccounts.length === 0) {
+                        console.log(`      ✅ No more accounts, stopping at page ${page + 1}`);
+                        break;
+                    }
+                    
+                    allAccounts.push(...pageAccounts);
+                    totalPages = page + 1;
+                    
+                    // Set start key for next page
+                    if (pageAccounts.length === pageSize) {
+                        startKey = pageAccounts[pageAccounts.length - 1][0];
+                    } else {
+                        // Last page
+                        break;
+                    }
+                }
+                
+                console.log(`      ✅ Loaded ${allAccounts.length} accounts in ${totalPages} pages`);
+                
+            } catch (e) {
+                console.warn(`⚠️ Paginated account loading failed: ${e.message}, falling back to no accounts`);
+                allAccounts = [];
+            }
+            
+            // Block hash verification
+            const storedBlockHash = await this.api.query.system.blockHash.at(blockHash, blockNumber);
             this.extractionStats.totalApiCalls++;
-
+            
             storageData.system = {
-                accounts: systemAccounts.slice(0, 100).map(([accountId, accountInfo]) => ({
+                accounts: allAccounts.slice(0, 100).map(([accountId, accountInfo]) => ({
                     accountId: accountId.toString(),
                     nonce: this.safeBigIntValue(accountInfo.nonce),
                     consumers: this.safeBigIntValue(accountInfo.consumers),
@@ -255,18 +297,15 @@ class AvailExplorerExtractor {
                     data: this.safeJsonData(accountInfo.data, 'account.data'),
                     raw: this.safeJsonData(accountInfo, 'account')
                 })),
-                totalAccounts: systemAccounts.length,
-                note: systemAccounts.length > 100 ? 'Limited to first 100 accounts' : 'All accounts included'
+                totalAccounts: allAccounts.length,
+                totalPages: totalPages,
+                note: allAccounts.length > 100 ? 'Limited to first 100 accounts for display' : 'All accounts included',
+                blockHashVerification: storedBlockHash.toString() === blockHash.toString()
             };
 
-            // Block hash verification
-            const storedBlockHash = await this.api.query.system.blockHash.at(blockHash, blockNumber);
-            this.extractionStats.totalApiCalls++;
-            storageData.system.blockHashVerification = storedBlockHash.toString() === blockHash.toString();
-
         } catch (error) {
-            console.warn(`⚠️ System storage extraction failed: ${error.message}`);
-            storageData.system = { error: error.message };
+            console.error(`❌ System storage extraction failed: ${error.message}`);
+            throw error;
         }
 
         try {
@@ -280,74 +319,98 @@ class AvailExplorerExtractor {
                     totalIssuance: this.safeBigIntValue(totalIssuance)
                 };
 
-                // Try to get balance entries (limited for performance)
+                // Try to get balance entries with pagination
                 try {
-                    const balanceEntries = await this.api.query.balances.account.entriesAt(blockHash);
-                    this.extractionStats.totalApiCalls++;
-
-                    storageData.balances.accounts = balanceEntries.slice(0, 50).map(([accountId, balance]) => ({
+                    const pageSize = parseInt(process.env.ACCOUNT_PAGE_SIZE) || 1000;
+                    const maxPages = Math.min(parseInt(process.env.MAX_ACCOUNT_PAGES) || 10, 5); // Limit balance pages to 5
+                    let allBalances = [];
+                    let totalPages = 0;
+                    let startKey = null;
+                    
+                    for (let page = 0; page < maxPages; page++) {
+                        console.log(`      💰 Loading balance page ${page + 1}/${maxPages}...`);
+                        
+                        const pageBalances = await this.api.query.balances.account.entriesPaged({
+                            args: [],
+                            pageSize: pageSize,
+                            startKey: startKey
+                        }, blockHash);
+                        
+                        this.extractionStats.totalApiCalls++;
+                        
+                        if (pageBalances.length === 0) {
+                            console.log(`      ✅ No more balances, stopping at page ${page + 1}`);
+                            break;
+                        }
+                        
+                        allBalances.push(...pageBalances);
+                        totalPages = page + 1;
+                        
+                        // Set start key for next page
+                        if (pageBalances.length === pageSize) {
+                            startKey = pageBalances[pageBalances.length - 1][0];
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    console.log(`      ✅ Loaded ${allBalances.length} balance entries in ${totalPages} pages`);
+                    
+                    storageData.balances.accounts = allBalances.slice(0, 50).map(([accountId, balance]) => ({
                         accountId: accountId.toString(),
                         free: this.safeBigIntValue(balance.free),
                         reserved: this.safeBigIntValue(balance.reserved),
                         frozen: balance.frozen ? this.safeBigIntValue(balance.frozen) : BigInt(0)
                     }));
-                    storageData.balances.totalBalanceAccounts = balanceEntries.length;
+                    storageData.balances.totalBalanceAccounts = allBalances.length;
+                    storageData.balances.totalPages = totalPages;
+                    
                 } catch (e) {
-                    console.warn(`⚠️ Balance entries extraction failed: ${e.message}`);
+                    console.warn(`⚠️ Paginated balance loading failed: ${e.message}, skipping balance entries`);
+                    storageData.balances.accounts = [];
+                    storageData.balances.totalBalanceAccounts = 0;
+                    storageData.balances.note = 'Balance pagination failed, entries skipped';
                 }
             }
         } catch (error) {
-            console.warn(`⚠️ Balances storage extraction failed: ${error.message}`);
-            storageData.balances = { error: error.message };
+            console.error(`❌ Balances storage extraction failed: ${error.message}`);
+            throw error;
         }
 
         try {
-            // Data Availability storage
+            // Data Availability storage - parallel queries
             console.log('    🎯 Data Availability storage...');
             if (this.api.query.dataAvailability) {
-                storageData.dataAvailability = {};
-
-                // Next App ID
                 try {
-                    const nextAppId = await this.api.query.dataAvailability.nextAppId.at(blockHash);
-                    this.extractionStats.totalApiCalls++;
-                    storageData.dataAvailability.nextAppId = this.safeBigIntValue(nextAppId);
-                } catch (e) {
-                    console.warn(`⚠️ NextAppId query failed: ${e.message}`);
-                }
+                    // Execute all DA queries in parallel
+                    const [nextAppId, appKeys, submissions] = await Promise.all([
+                        this.api.query.dataAvailability.nextAppId.at(blockHash),
+                        this.api.query.dataAvailability.appKeys.entriesAt(blockHash),
+                        this.api.query.dataAvailability.dataSubmissions?.entriesAt(blockHash) || Promise.resolve([])
+                    ]);
+                    
+                    this.extractionStats.totalApiCalls += 3;
 
-                // App Keys
-                try {
-                    const appKeys = await this.api.query.dataAvailability.appKeys.entriesAt(blockHash);
-                    this.extractionStats.totalApiCalls++;
-                    storageData.dataAvailability.appKeys = appKeys.map(([key, value]) => ({
-                        appId: this.safeJsonData(key, 'appKey'),
-                        keyData: this.safeJsonData(value, 'appKeyValue')
-                    }));
-                } catch (e) {
-                    console.warn(`⚠️ AppKeys query failed: ${e.message}`);
-                }
-
-                // Data Submissions (check if available)
-                try {
-                    if (this.api.query.dataAvailability.dataSubmissions) {
-                        const submissions = await this.api.query.dataAvailability.dataSubmissions.entriesAt(blockHash);
-                        this.extractionStats.totalApiCalls++;
-                        storageData.dataAvailability.dataSubmissions = submissions.map(([key, value]) => ({
+                    storageData.dataAvailability = {
+                        nextAppId: this.safeBigIntValue(nextAppId),
+                        appKeys: appKeys.map(([key, value]) => ({
+                            appId: this.safeJsonData(key, 'appKey'),
+                            keyData: this.safeJsonData(value, 'appKeyValue')
+                        })),
+                        dataSubmissions: submissions.map(([key, value]) => ({
                             submissionKey: this.safeJsonData(key, 'submissionKey'),
                             submissionData: this.safeJsonData(value, 'submissionValue')
-                        }));
-                    } else {
-                        storageData.dataAvailability.dataSubmissions = [];
-                        console.warn('⚠️ DataSubmissions storage not available in this runtime');
-                    }
+                        }))
+                    };
+
                 } catch (e) {
-                    console.warn(`⚠️ DataSubmissions query failed: ${e.message}`);
+                    console.error(`❌ Data Availability parallel queries failed: ${e.message}`);
+                    throw e;
                 }
             }
         } catch (error) {
-            console.warn(`⚠️ DataAvailability storage extraction failed: ${error.message}`);
-            storageData.dataAvailability = { error: error.message };
+            console.error(`❌ DataAvailability storage extraction failed: ${error.message}`);
+            throw error;
         }
 
         // Additional storage modules
@@ -364,7 +427,8 @@ class AvailExplorerExtractor {
                         validatorCount: validators.length
                     };
                 } catch (e) {
-                    console.warn(`⚠️ Session storage failed: ${e.message}`);
+                    console.error(`❌ Session storage failed: ${e.message}`);
+                    throw e;
                 }
             }
 
@@ -377,12 +441,14 @@ class AvailExplorerExtractor {
                         currentEra: currentEra ? this.safeBigIntValue(currentEra) : null
                     };
                 } catch (e) {
-                    console.warn(`⚠️ Staking storage failed: ${e.message}`);
+                    console.error(`❌ Staking storage failed: ${e.message}`);
+                    throw e;
                 }
             }
 
         } catch (error) {
-            console.warn(`⚠️ Additional storage extraction failed: ${error.message}`);
+            console.error(`❌ Additional storage extraction failed: ${error.message}`);
+            throw error;
         }
 
         return storageData;
@@ -392,39 +458,41 @@ class AvailExplorerExtractor {
     async extractKateData(blockHash) {
         try {
             if (this.api.rpc.kate) {
-                const kateData = {};
+                // Execute all Kate RPC calls in parallel
+                const [blockLength, dataProof, rowData] = await Promise.all([
+                    this.api.rpc.kate.blockLength(blockHash),
+                    this.api.rpc.kate.queryDataProof(0, blockHash).catch(e => ({ error: e.message })),
+                    this.api.rpc.kate.queryRows([0], blockHash).catch(e => ({ error: e.message }))
+                ]);
+                
+                this.extractionStats.totalApiCalls += 3;
 
-                // Block length/dimensions
-                const blockLength = await this.api.rpc.kate.blockLength(blockHash);
-                this.extractionStats.totalApiCalls++;
-                kateData.blockLength = this.safeJsonData(blockLength, 'kate.blockLength');
+                const kateData = {
+                    blockLength: this.safeJsonData(blockLength, 'kate.blockLength'),
+                    available: true
+                };
 
-                // Try to get data proof for index 0 (if any data exists)
-                try {
-                    const dataProof = await this.api.rpc.kate.queryDataProof(0, blockHash);
-                    this.extractionStats.totalApiCalls++;
-                    kateData.sampleDataProof = this.safeJsonData(dataProof, 'kate.dataProof');
-                } catch (e) {
+                // Process data proof result
+                if (dataProof.error) {
                     kateData.dataProofNote = 'No data proof available (expected for blocks without data)';
+                } else {
+                    kateData.sampleDataProof = this.safeJsonData(dataProof, 'kate.dataProof');
                 }
 
-                // Try to get row data (if available)
-                try {
-                    const rowData = await this.api.rpc.kate.queryRows([0], blockHash);
-                    this.extractionStats.totalApiCalls++;
-                    kateData.sampleRowData = this.safeJsonData(rowData, 'kate.rowData');
-                } catch (e) {
+                // Process row data result
+                if (rowData.error) {
                     kateData.rowDataNote = 'No row data available';
+                } else {
+                    kateData.sampleRowData = this.safeJsonData(rowData, 'kate.rowData');
                 }
 
-                kateData.available = true;
                 return kateData;
             } else {
                 return { error: 'Kate RPC not available' };
             }
         } catch (error) {
-            console.warn(`⚠️ Kate data extraction failed: ${error.message}`);
-            return { error: error.message };
+            console.error(`❌ Kate data extraction failed: ${error.message}`);
+            throw error;
         }
     }
 
@@ -444,14 +512,50 @@ class AvailExplorerExtractor {
                 }
             };
 
-            // Get system accounts for analysis
-            const systemAccounts = await this.api.query.system.account.entriesAt(blockHash);
-            this.extractionStats.totalApiCalls++;
-
-            accountData.summary.totalAccounts = systemAccounts.length;
+            // Use the same paginated accounts from storage extraction
+            const pageSize = parseInt(process.env.ACCOUNT_PAGE_SIZE) || 1000;
+            const maxPages = Math.min(parseInt(process.env.MAX_ACCOUNT_PAGES) || 10, 3); // Limit to 3 pages for account analysis
+            let allAccounts = [];
             
-            // Analyze first 50 accounts for performance
-            const sampleAccounts = systemAccounts.slice(0, 50);
+            try {
+                let startKey = null;
+                
+                for (let page = 0; page < maxPages; page++) {
+                    console.log(`      👥 Loading account analysis page ${page + 1}/${maxPages}...`);
+                    
+                    const pageAccounts = await this.api.query.system.account.entriesPaged({
+                        args: [],
+                        pageSize: pageSize,
+                        startKey: startKey
+                    }, blockHash);
+                    
+                    this.extractionStats.totalApiCalls++;
+                    
+                    if (pageAccounts.length === 0) {
+                        break;
+                    }
+                    
+                    allAccounts.push(...pageAccounts);
+                    
+                    // Set start key for next page
+                    if (pageAccounts.length === pageSize) {
+                        startKey = pageAccounts[pageAccounts.length - 1][0];
+                    } else {
+                        break;
+                    }
+                }
+                
+                console.log(`      ✅ Analyzed ${allAccounts.length} accounts for activity`);
+                
+            } catch (e) {
+                console.warn(`⚠️ Account analysis pagination failed: ${e.message}`);
+                allAccounts = [];
+            }
+
+            accountData.summary.totalAccounts = allAccounts.length;
+            
+            // Analyze accounts for activity (limited sample)
+            const sampleAccounts = allAccounts.slice(0, 50);
             
             for (const [accountId, accountInfo] of sampleAccounts) {
                 const account = {
@@ -477,8 +581,8 @@ class AvailExplorerExtractor {
             return accountData;
 
         } catch (error) {
-            console.warn(`⚠️ Account data extraction failed: ${error.message}`);
-            return { error: error.message };
+            console.error(`❌ Account data extraction failed: ${error.message}`);
+            throw error;
         }
     }
 
@@ -535,8 +639,8 @@ class AvailExplorerExtractor {
             return stats;
 
         } catch (error) {
-            console.warn(`⚠️ Network statistics calculation failed: ${error.message}`);
-            return { error: error.message };
+            console.error(`❌ Network statistics calculation failed: ${error.message}`);
+            throw error;
         }
     }
 
@@ -602,8 +706,8 @@ class AvailExplorerExtractor {
                 note: 'Full metadata available via separate query for storage efficiency'
             };
         } catch (error) {
-            console.warn(`⚠️ Metadata extraction failed: ${error.message}`);
-            return { error: error.message };
+            console.error(`❌ Metadata extraction failed: ${error.message}`);
+            throw error;
         }
     }
 

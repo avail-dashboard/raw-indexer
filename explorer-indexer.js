@@ -434,10 +434,22 @@ class AvailExplorerIndexer {
                 
                 const extrinsicIndex = this.extractExtrinsicIndex(event.phase);
                 
+                // Parse app ID properly - should be numeric
+                let appId = 0;
+                if (event.data && event.data[0]) {
+                    try {
+                        // Try to convert to number, fallback to 0 if it's an account string
+                        const appIdValue = event.data[0].toString();
+                        appId = /^\d+$/.test(appIdValue) ? parseInt(appIdValue) : 0;
+                    } catch (e) {
+                        appId = 0;
+                    }
+                }
+                
                 submissions.push({
                     eventId: eventIds[event.index],
                     extrinsicId: extrinsicIndex !== null ? extrinsicIds[extrinsicIndex] : null,
-                    appId: event.data && event.data[0] ? event.data[0] : 0,
+                    appId: appId,
                     submitter: event.data && event.data[1] ? event.data[1] : null,
                     dataSize: event.data && event.data[2] ? parseInt(event.data[2]) : 0,
                     dataIndex: null // Would need additional extraction
