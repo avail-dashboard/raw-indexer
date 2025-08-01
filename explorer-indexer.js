@@ -255,9 +255,11 @@ class AvailExplorerIndexer {
             headerRawHex: header.raw
         };
 
-        await this.database.insertBlockHeader(blockHeaderData, client);
+        // 1. & 2. Store block header and Kate commitment in parallel (independent tables)
+        const independentInserts = [
+            this.database.insertBlockHeader(blockHeaderData, client)
+        ];
 
-        // 2. Store Kate commitment data
         if (kate && kate.blockLength) {
             const kateData = {
                 blockHash: blockData.blockHash,
@@ -271,13 +273,18 @@ class AvailExplorerIndexer {
                 appDataCount: 0 // No analytics calculation
             };
 
-            await this.database.insertKateCommitment(kateData, client);
+            independentInserts.push(this.database.insertKateCommitment(kateData, client));
         }
 
-        // 3. Store extrinsics
+        // Execute independent inserts in parallel
+        await Promise.all(independentInserts);
+
+        // 3. Store extrinsics in parallel batch
         const extrinsicIds = {};
-        for (const ext of extrinsics) {
-            const extrinsicData = {
+        
+        if (extrinsics.length > 0) {
+            // Prepare all extrinsic data
+            const extrinsicDataArray = extrinsics.map(ext => ({
                 blockHash: blockData.blockHash,
                 blockNumber: header.number,
                 extrinsicIndex: ext.index,
@@ -295,43 +302,73 @@ class AvailExplorerIndexer {
                 eraData: ext.signature?.era,
                 rawHex: ext.rawHex,
                 lengthBytes: ext.length
-            };
+            }));
 
-            const extrinsicId = await this.database.insertExtrinsic(extrinsicData, client);
-            extrinsicIds[ext.index] = extrinsicId;
+            // Execute all extrinsic inserts in parallel
+            const extrinsicPromises = extrinsicDataArray.map(data => 
+                this.database.insertExtrinsic(data, client)
+            );
+            const extrinsicResults = await Promise.all(extrinsicPromises);
+
+            // Map results back to extrinsic indices
+            extrinsics.forEach((ext, i) => {
+                extrinsicIds[ext.index] = extrinsicResults[i];
+            });
         }
 
-        // 4. Store events
+        // 4. Store events in parallel batch
         const eventIds = {};
-        for (const event of events) {
-            const extrinsicIndex = this.extractExtrinsicIndex(event.phase);
-            const eventData = {
-                blockHash: blockData.blockHash,
-                blockNumber: header.number,
-                eventIndex: event.index,
-                extrinsicId: extrinsicIndex !== null ? extrinsicIds[extrinsicIndex] : null,
-                extrinsicIndex: extrinsicIndex,
-                phaseType: this.getPhaseType(event.phase),
-                phaseValue: this.getPhaseValue(event.phase),
-                pallet: event.pallet,
-                eventName: event.eventName,
-                eventData: event.data,
-                topics: event.topics,
-                rawData: event.rawData
-            };
+        
+        if (events.length > 0) {
+            // Prepare all event data
+            const eventDataArray = events.map(event => {
+                const extrinsicIndex = this.extractExtrinsicIndex(event.phase);
+                return {
+                    blockHash: blockData.blockHash,
+                    blockNumber: header.number,
+                    eventIndex: event.index,
+                    extrinsicId: extrinsicIndex !== null ? extrinsicIds[extrinsicIndex] : null,
+                    extrinsicIndex: extrinsicIndex,
+                    phaseType: this.getPhaseType(event.phase),
+                    phaseValue: this.getPhaseValue(event.phase),
+                    pallet: event.pallet,
+                    eventName: event.eventName,
+                    eventData: event.data,
+                    topics: event.topics,
+                    rawData: event.rawData
+                };
+            });
 
-            const eventId = await this.database.insertEvent(eventData, client);
-            eventIds[event.index] = eventId;
+            // Execute all event inserts in parallel
+            const eventPromises = eventDataArray.map(data => 
+                this.database.insertEvent(data, client)
+            );
+            const eventResults = await Promise.all(eventPromises);
 
-            // Link extrinsics to events
-            if (eventData.extrinsicId) {
-                await this.database.linkExtrinsicEvent(eventData.extrinsicId, eventId, client);
+            // Map results back to event indices
+            events.forEach((event, i) => {
+                eventIds[event.index] = eventResults[i];
+            });
+
+            // Link extrinsics to events in parallel batch
+            const linkingPromises = [];
+            eventDataArray.forEach((eventData, i) => {
+                if (eventData.extrinsicId) {
+                    linkingPromises.push(
+                        this.database.linkExtrinsicEvent(eventData.extrinsicId, eventResults[i], client)
+                    );
+                }
+            });
+
+            if (linkingPromises.length > 0) {
+                await Promise.all(linkingPromises);
             }
         }
 
-        // 5. Store account data
-        if (accounts && accounts.accounts) {
-            for (const account of accounts.accounts) {
+        // 5. Store account data in parallel batches
+        if (accounts && accounts.accounts && accounts.accounts.length > 0) {
+            // Process all accounts in parallel
+            const accountPromises = accounts.accounts.map(account => {
                 const accountProfileData = {
                     accountId: account.accountId,
                     currentNonce: account.nonce,
@@ -346,9 +383,6 @@ class AvailExplorerIndexer {
                     lastActivityTimestamp: blockData.timestamp
                 };
 
-                await this.database.upsertAccountProfile(accountProfileData, client);
-
-                // Store balance history
                 const balanceHistoryData = {
                     accountId: account.accountId,
                     blockHash: blockData.blockHash,
@@ -362,8 +396,15 @@ class AvailExplorerIndexer {
                     sufficients: 0 // Would need to extract from storage
                 };
 
-                await this.database.insertBalanceHistory(balanceHistoryData, client);
-            }
+                // Execute both account operations in parallel for each account
+                return Promise.all([
+                    this.database.upsertAccountProfile(accountProfileData, client),
+                    this.database.insertBalanceHistory(balanceHistoryData, client)
+                ]);
+            });
+
+            // Execute all account operations in parallel
+            await Promise.all(accountPromises);
         }
 
         // 6. Store transfer events
