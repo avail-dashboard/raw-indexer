@@ -3,6 +3,7 @@
 
 require('dotenv').config();
 const { initialize } = require('avail-js-sdk');
+const Bottleneck = require('bottleneck');
 
 class AvailExplorerExtractor {
     constructor() {
@@ -12,6 +13,11 @@ class AvailExplorerExtractor {
             extractionStartTime: 0,
             blockProcessingTime: {}
         };
+        
+        // Rate limiter: 500ms between API calls
+        this.limiter = new Bottleneck({
+            minTime: parseInt(process.env.REQUEST_DELAY) || 500
+        });
     }
 
     async connect() {
@@ -89,7 +95,7 @@ class AvailExplorerExtractor {
         
         try {
             // Get block hash first
-            const blockHash = await this.api.rpc.chain.getBlockHash(blockNumber);
+            const blockHash = await this.limiter.schedule(() => this.api.rpc.chain.getBlockHash(blockNumber));
             this.extractionStats.totalApiCalls++;
             
             const extractedData = {
@@ -146,7 +152,7 @@ class AvailExplorerExtractor {
 
     // Extract core block data (header, extrinsics, basic info)
     async extractCoreBlockData(blockHash) {
-        const block = await this.api.rpc.chain.getBlock(blockHash);
+        const block = await this.limiter.schedule(() => this.api.rpc.chain.getBlock(blockHash));
         this.extractionStats.totalApiCalls++;
 
         const header = block.block.header;
@@ -186,7 +192,7 @@ class AvailExplorerExtractor {
 
     // Extract all events data
     async extractEventsData(blockHash) {
-        const events = await this.api.query.system.events.at(blockHash);
+        const events = await this.limiter.schedule(() => this.api.query.system.events.at(blockHash));
         this.extractionStats.totalApiCalls++;
 
         return events.map((event, index) => ({
@@ -203,13 +209,14 @@ class AvailExplorerExtractor {
     // Extract runtime and system information
     async extractRuntimeData(blockHash) {
         try {
-            const [runtimeVersion, chainInfo, nodeVersion, properties] = await Promise.all([
-                this.api.rpc.state.getRuntimeVersion(blockHash),
-                this.api.rpc.system.chain(),
-                this.api.rpc.system.version(),
-                this.api.rpc.system.properties().catch(() => null)
-            ]);
-            this.extractionStats.totalApiCalls += 4;
+            const runtimeVersion = await this.limiter.schedule(() => this.api.rpc.state.getRuntimeVersion(blockHash));
+            this.extractionStats.totalApiCalls++;
+            const chainInfo = await this.limiter.schedule(() => this.api.rpc.system.chain());
+            this.extractionStats.totalApiCalls++;
+            const nodeVersion = await this.limiter.schedule(() => this.api.rpc.system.version());
+            this.extractionStats.totalApiCalls++;
+            const properties = await this.limiter.schedule(() => this.api.rpc.system.properties().catch(() => null));
+            this.extractionStats.totalApiCalls++;
 
             return {
                 runtimeVersion: {
@@ -251,11 +258,11 @@ class AvailExplorerExtractor {
                 for (let page = 0; page < maxPages; page++) {
                     console.log(`      📄 Loading account page ${page + 1}/${maxPages}...`);
                     
-                    const pageAccounts = await this.api.query.system.account.entriesPaged({
+                    const pageAccounts = await this.limiter.schedule(() => this.api.query.system.account.entriesPaged({
                         args: [],
                         pageSize: pageSize,
                         startKey: startKey
-                    }, blockHash);
+                    }, blockHash));
                     
                     this.extractionStats.totalApiCalls++;
                     
@@ -284,7 +291,7 @@ class AvailExplorerExtractor {
             }
             
             // Block hash verification
-            const storedBlockHash = await this.api.query.system.blockHash.at(blockHash, blockNumber);
+            const storedBlockHash = await this.limiter.schedule(() => this.api.query.system.blockHash.at(blockHash, blockNumber));
             this.extractionStats.totalApiCalls++;
             
             storageData.system = {

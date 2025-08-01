@@ -171,10 +171,7 @@ class AvailExplorerIndexer {
                 }
             }
 
-            // Rate limiting
-            if (this.config.requestDelay > 0 && !this.shouldStop) {
-                await this.sleep(this.config.requestDelay);
-            }
+            // Rate limiting now handled at API level in explorer-extractor
         }
 
         if (this.shouldStop) {
