@@ -144,12 +144,9 @@ class AvailExplorerIndexer {
         const totalBlocks = endBlock - startBlock + 1;
         console.log(`\n🔄 Processing ${totalBlocks} blocks sequentially...`);
 
-        let previousBlockData = null;
-
         for (let blockNum = startBlock; blockNum <= endBlock && !this.shouldStop; blockNum++) {
             try {
-                const blockData = await this.processBlock(blockNum, previousBlockData);
-                previousBlockData = blockData;
+                const blockData = await this.processBlock(blockNum);
                 this.lastProcessedBlock = blockNum;
                 
                 // Progress reporting
@@ -182,7 +179,7 @@ class AvailExplorerIndexer {
     }
 
     // Process a single block with complete data extraction and storage
-    async processBlock(blockNumber, previousBlockData = null) {
+    async processBlock(blockNumber) {
         const blockStartTime = Date.now();
         console.log(`  🔍 Checking if block ${blockNumber} already exists...`);
         
@@ -199,19 +196,11 @@ class AvailExplorerIndexer {
             // Extract comprehensive block data
             const blockData = await this.extractor.extractCompleteBlockData(blockNumber);
             
-            // Disconnect from RPC to avoid connection timeouts during long database operations
-            console.log(`  🔌 Disconnecting from RPC before database operations...`);
-            await this.extractor.disconnect();
-            
             console.log(`  💾 Storing block ${blockNumber} in transaction...`);
             // Store ALL data in single atomic transaction
             await this.database.withTransaction(async (client) => {
                 await this.storeCompleteBlockData(blockData, client);
             });
-            
-            // Reconnect for next block (if any)
-            console.log(`  🔗 Reconnecting to RPC...`);
-            await this.extractor.connect();
 
             // Update statistics
             this.updateProcessingStats(blockData);

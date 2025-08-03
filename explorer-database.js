@@ -12,10 +12,12 @@ class ExplorerDatabase {
             database: process.env.DB_DATABASE,
             host: process.env.DB_HOST,
             port: process.env.DB_PORT,
-            max: parseInt(process.env.DB_POOL_MAX) || 10,
-            min: parseInt(process.env.DB_POOL_MIN) || 1,
-            idleTimeoutMillis: parseInt(process.env.DB_POOL_IDLE_TIMEOUT) || 30000,
+            max: parseInt(process.env.DB_POOL_MAX) || 20,
+            min: parseInt(process.env.DB_POOL_MIN) || 2,
+            idleTimeoutMillis: parseInt(process.env.DB_POOL_IDLE_TIMEOUT) || 10000,
             connectionTimeoutMillis: 30000,
+            acquireTimeoutMillis: 60000,
+            createTimeoutMillis: 30000,
             query_timeout: 7200000
         });
 

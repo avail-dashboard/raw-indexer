@@ -44,7 +44,6 @@ WITH all_empty_columns AS (
     SELECT 'block_headers' AS table_name, 'authoring_version' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE authoring_version IS NOT NULL) UNION ALL
     SELECT 'block_headers' AS table_name, 'transaction_version' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE transaction_version IS NOT NULL) UNION ALL
     SELECT 'block_headers' AS table_name, 'state_version' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE state_version IS NOT NULL) UNION ALL
-    SELECT 'block_headers' AS table_name, 'digest_json' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE digest_json IS NOT NULL) UNION ALL
     SELECT 'block_headers' AS table_name, 'header_raw_hex' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE header_raw_hex IS NOT NULL) UNION ALL
     SELECT 'block_headers' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE indexed_at IS NOT NULL) UNION ALL
     SELECT 'block_headers' AS table_name, 'extraction_version' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE extraction_version IS NOT NULL) UNION ALL
@@ -194,25 +193,21 @@ FROM all_empty_columns
 GROUP BY table_name;
 
 -- Query to find missing block numbers in block_headers
-WITH RECURSIVE missing_blocks AS (
-    SELECT min_block + 1 AS missing_block
-    FROM (
-        SELECT MIN(block_number)::bigint AS min_block, MAX(block_number)::bigint AS max_block
-        FROM block_headers
-    ) AS bounds
-    WHERE min_block < max_block
-
-    UNION ALL
-
-    SELECT missing_block + 1
-    FROM missing_blocks, (
-        SELECT MAX(block_number)::bigint AS max_block
-        FROM block_headers
-    ) AS bounds
-    WHERE missing_block < max_block
+WITH missing AS (
+  SELECT generate_series(min(block_number)::int, max(block_number)::int, 1) AS missing_block
+  FROM block_headers
+  EXCEPT
+  SELECT block_number::int
+  FROM block_headers
+), groups AS (
+  SELECT missing_block, missing_block - ROW_NUMBER() OVER (ORDER BY missing_block) as grp
+  FROM missing
 )
-SELECT m.missing_block
-FROM missing_blocks m
-LEFT JOIN block_headers b ON m.missing_block = b.block_number
-WHERE b.block_number IS NULL
-ORDER BY m.missing_block;
+SELECT
+  CASE
+    WHEN MIN(missing_block) = MAX(missing_block) THEN MIN(missing_block)::text
+    ELSE MIN(missing_block)::text || '-' || MAX(missing_block)::text
+  END AS missing_block_range
+FROM groups
+GROUP BY grp
+ORDER BY MIN(missing_block);
