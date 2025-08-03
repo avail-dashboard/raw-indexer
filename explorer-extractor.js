@@ -14,10 +14,26 @@ class AvailExplorerExtractor {
             blockProcessingTime: {}
         };
         
-        // Rate limiter: 500ms between API calls
-        this.limiter = new Bottleneck({
-            minTime: parseInt(process.env.REQUEST_DELAY) || 500
-        });
+        // Rate limiter: Only if REQUEST_DELAY is set in environment
+        const requestDelay = process.env.REQUEST_DELAY;
+        if (requestDelay) {
+            console.log(`🚦 Rate limiting enabled: ${requestDelay}ms between API calls`);
+            this.limiter = new Bottleneck({
+                minTime: parseInt(requestDelay)
+            });
+        } else {
+            console.log('🚀 Rate limiting disabled: Maximum API speed');
+            this.limiter = null;
+        }
+    }
+
+    // Helper method to conditionally apply rate limiting
+    async scheduleApiCall(apiFunction) {
+        if (this.limiter) {
+            return await this.limiter.schedule(apiFunction);
+        } else {
+            return await apiFunction(); 
+        }
     }
 
     async connect() {
@@ -95,7 +111,7 @@ class AvailExplorerExtractor {
         
         try {
             // Get block hash first
-            const blockHash = await this.limiter.schedule(() => this.api.rpc.chain.getBlockHash(blockNumber));
+            const blockHash = await this.scheduleApiCall(() => this.api.rpc.chain.getBlockHash(blockNumber));
             this.extractionStats.totalApiCalls++;
             
             const extractedData = {
@@ -152,7 +168,7 @@ class AvailExplorerExtractor {
 
     // Extract core block data (header, extrinsics, basic info)
     async extractCoreBlockData(blockHash) {
-        const block = await this.limiter.schedule(() => this.api.rpc.chain.getBlock(blockHash));
+        const block = await this.scheduleApiCall(() => this.api.rpc.chain.getBlock(blockHash));
         this.extractionStats.totalApiCalls++;
 
         const header = block.block.header;
@@ -192,7 +208,7 @@ class AvailExplorerExtractor {
 
     // Extract all events data
     async extractEventsData(blockHash) {
-        const events = await this.limiter.schedule(() => this.api.query.system.events.at(blockHash));
+        const events = await this.scheduleApiCall(() => this.api.query.system.events.at(blockHash));
         this.extractionStats.totalApiCalls++;
 
         return events.map((event, index) => ({
@@ -209,13 +225,13 @@ class AvailExplorerExtractor {
     // Extract runtime and system information
     async extractRuntimeData(blockHash) {
         try {
-            const runtimeVersion = await this.limiter.schedule(() => this.api.rpc.state.getRuntimeVersion(blockHash));
+            const runtimeVersion = await this.scheduleApiCall(() => this.api.rpc.state.getRuntimeVersion(blockHash));
             this.extractionStats.totalApiCalls++;
-            const chainInfo = await this.limiter.schedule(() => this.api.rpc.system.chain());
+            const chainInfo = await this.scheduleApiCall(() => this.api.rpc.system.chain());
             this.extractionStats.totalApiCalls++;
-            const nodeVersion = await this.limiter.schedule(() => this.api.rpc.system.version());
+            const nodeVersion = await this.scheduleApiCall(() => this.api.rpc.system.version());
             this.extractionStats.totalApiCalls++;
-            const properties = await this.limiter.schedule(() => this.api.rpc.system.properties().catch(() => null));
+            const properties = await this.scheduleApiCall(() => this.api.rpc.system.properties().catch(() => null));
             this.extractionStats.totalApiCalls++;
 
             return {
@@ -258,7 +274,7 @@ class AvailExplorerExtractor {
                 for (let page = 0; page < maxPages; page++) {
                     console.log(`      📄 Loading account page ${page + 1}/${maxPages}...`);
                     
-                    const pageAccounts = await this.limiter.schedule(() => this.api.query.system.account.entriesPaged({
+                    const pageAccounts = await this.scheduleApiCall(() => this.api.query.system.account.entriesPaged({
                         args: [],
                         pageSize: pageSize,
                         startKey: startKey
@@ -291,7 +307,7 @@ class AvailExplorerExtractor {
             }
             
             // Block hash verification
-            const storedBlockHash = await this.limiter.schedule(() => this.api.query.system.blockHash.at(blockHash, blockNumber));
+            const storedBlockHash = await this.scheduleApiCall(() => this.api.query.system.blockHash.at(blockHash, blockNumber));
             this.extractionStats.totalApiCalls++;
             
             storageData.system = {
