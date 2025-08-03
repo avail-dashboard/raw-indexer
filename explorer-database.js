@@ -16,7 +16,7 @@ class ExplorerDatabase {
             min: parseInt(process.env.DB_POOL_MIN) || 1,
             idleTimeoutMillis: parseInt(process.env.DB_POOL_IDLE_TIMEOUT) || 30000,
             connectionTimeoutMillis: 30000,
-            query_timeout: 300000
+            query_timeout: 7200000
         });
 
         this.pool.on('error', (err) => {
@@ -96,6 +96,67 @@ class ExplorerDatabase {
     }
 
     // ================================
+    // GENERIC BATCH PROCESSING UTILITIES
+    // ================================
+
+    // Universal batch function for all data types
+    async executeBatch(dataArray, table, columns, transform, chunkSize, operation = 'INSERT', client = null) {
+        if (!dataArray || dataArray.length === 0) return [];
+        
+        // Auto-chunk if needed
+        if (dataArray.length > chunkSize) {
+            const allResults = [];
+            for (let i = 0; i < dataArray.length; i += chunkSize) {
+                const chunk = dataArray.slice(i, i + chunkSize);
+                const results = await this.executeBatch(chunk, table, columns, transform, chunkSize, operation, client);
+                allResults.push(...results);
+            }
+            return allResults;
+        }
+        
+        // Build batch query
+        const valueGroups = [];
+        const allParams = [];
+        let paramIndex = 1;
+        
+        for (const item of dataArray) {
+            const params = transform(item);
+            allParams.push(...params);
+            
+            const placeholders = [];
+            for (let i = 0; i < params.length; i++) {
+                placeholders.push(`$${paramIndex++}`);
+            }
+            valueGroups.push(`(${placeholders.join(', ')})`);
+        }
+        
+        let query;
+        if (operation === 'UPSERT' && table === 'account_profiles') {
+            query = `
+                INSERT INTO ${table} (${columns.join(', ')}) 
+                VALUES ${valueGroups.join(', ')}
+                ON CONFLICT (account_id) DO UPDATE SET
+                    display_name = COALESCE(EXCLUDED.display_name, account_profiles.display_name),
+                    is_validator = EXCLUDED.is_validator,
+                    is_nominator = EXCLUDED.is_nominator,
+                    current_nonce = EXCLUDED.current_nonce,
+                    last_activity_block = EXCLUDED.last_activity_block,
+                    last_activity_timestamp = EXCLUDED.last_activity_timestamp
+                RETURNING id;
+            `;
+        } else {
+            query = `
+                INSERT INTO ${table} (${columns.join(', ')}) 
+                VALUES ${valueGroups.join(', ')}
+                RETURNING id;
+            `;
+        }
+        
+        const result = await this.query(query, allParams, client);
+        return result.rows.map(row => row.id);
+    }
+
+    // ================================
     // BLOCK DATA STORAGE
     // ================================
 
@@ -107,10 +168,10 @@ class ExplorerDatabase {
                 extrinsics_count, events_count, data_submissions_count, 
                 total_fees, total_tips,
                 spec_version, impl_version, authoring_version, transaction_version, state_version,
-                digest_json, header_raw_hex, extraction_version
+                header_raw_hex, extraction_version
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 
-                $15, $16, $17, $18, $19, $20, $21, $22
+                $15, $16, $17, $18, $19, $20, $21
             )
             RETURNING id;
         `;
@@ -135,7 +196,6 @@ class ExplorerDatabase {
             this.prepareBigIntValue(blockData.authoringVersion),
             this.prepareBigIntValue(blockData.transactionVersion),
             this.prepareBigIntValue(blockData.stateVersion),
-            blockData.digestJson ? this.safeBigIntStringify(blockData.digestJson) : null,
             blockData.headerRawHex || null,
             '2.0.0'
         ];
@@ -211,57 +271,32 @@ class ExplorerDatabase {
     }
 
     async insertExtrinsicsBatch(extrinsicsDataArray, client = null) {
-        if (!extrinsicsDataArray || extrinsicsDataArray.length === 0) {
-            return [];
-        }
-
-        // Build batch INSERT query with VALUES for all extrinsics
-        const valueGroups = [];
-        const allParams = [];
-        let paramIndex = 1;
-
-        for (const extrinsicData of extrinsicsDataArray) {
-            const params = [
-                extrinsicData.blockHash,
-                this.prepareBigIntValue(extrinsicData.blockNumber),
-                extrinsicData.extrinsicIndex,
-                extrinsicData.extrinsicHash,
-                extrinsicData.isSigned,
-                extrinsicData.signerAccount || null,
-                extrinsicData.methodPallet,
-                extrinsicData.methodName,
-                this.prepareBigIntValue(extrinsicData.nonce),
-                this.prepareBigIntValue(extrinsicData.tip || 0),
-                this.prepareBigIntValue(extrinsicData.fee || 0),
-                extrinsicData.success !== undefined ? extrinsicData.success : null,
-                extrinsicData.errorMessage || null,
-                extrinsicData.methodArgs ? this.safeBigIntStringify(extrinsicData.methodArgs) : null,
-                extrinsicData.rawHex || null,
-                extrinsicData.lengthBytes || null
-            ];
-
-            allParams.push(...params);
-            
-            // Create parameter placeholders for this extrinsic (16 params)
-            const placeholders = [];
-            for (let i = 0; i < 16; i++) {
-                placeholders.push(`$${paramIndex++}`);
-            }
-            valueGroups.push(`(${placeholders.join(', ')})`);
-        }
-
-        const query = `
-            INSERT INTO extrinsic_data (
-                block_hash, block_number, extrinsic_index, extrinsic_hash,
-                is_signed, signer_account, method_pallet, method_name,
-                nonce, tip, fee, success, error_message,
-                method_args, raw_hex, length_bytes
-            ) VALUES ${valueGroups.join(', ')}
-            RETURNING id;
-        `;
-
-        const result = await this.query(query, allParams, client);
-        return result.rows.map(row => row.id);
+        return this.executeBatch(
+            extrinsicsDataArray,
+            'extrinsic_data',
+            ['block_hash', 'block_number', 'extrinsic_index', 'extrinsic_hash', 'is_signed', 'signer_account', 'method_pallet', 'method_name', 'nonce', 'tip', 'fee', 'success', 'error_message', 'method_args', 'raw_hex', 'length_bytes'],
+            (item) => [
+                item.blockHash,
+                this.prepareBigIntValue(item.blockNumber),
+                item.extrinsicIndex,
+                item.extrinsicHash,
+                item.isSigned,
+                item.signerAccount || null,
+                item.methodPallet,
+                item.methodName,
+                this.prepareBigIntValue(item.nonce),
+                this.prepareBigIntValue(item.tip || 0),
+                this.prepareBigIntValue(item.fee || 0),
+                item.success !== undefined ? item.success : null,
+                item.errorMessage || null,
+                item.methodArgs ? this.safeBigIntStringify(item.methodArgs) : null,
+                item.rawHex || null,
+                item.lengthBytes || null
+            ],
+            1000,
+            'INSERT',
+            client
+        );
     }
 
     async insertEvent(eventData, client = null) {
@@ -292,50 +327,29 @@ class ExplorerDatabase {
     }
 
     async insertEventsBatch(eventsDataArray, client = null) {
-        if (!eventsDataArray || eventsDataArray.length === 0) {
-            return [];
-        }
-
-        // Build batch INSERT query with VALUES for all events
-        const valueGroups = [];
-        const allParams = [];
-        let paramIndex = 1;
-
-        for (const eventData of eventsDataArray) {
-            const params = [
-                eventData.blockHash,
-                this.prepareBigIntValue(eventData.blockNumber),
-                eventData.eventIndex,
-                eventData.extrinsicId || null,
-                eventData.extrinsicIndex || null,
-                eventData.phaseType || null,
-                eventData.phaseValue || null,
-                eventData.pallet,
-                eventData.eventName,
-                eventData.topics || [],
-                eventData.rawData ? this.safeBigIntStringify(eventData.rawData) : null
-            ];
-
-            allParams.push(...params);
-            
-            // Create parameter placeholders for this event (11 params)
-            const placeholders = [];
-            for (let i = 0; i < 11; i++) {
-                placeholders.push(`$${paramIndex++}`);
-            }
-            valueGroups.push(`(${placeholders.join(', ')})`);
-        }
-
-        const query = `
-            INSERT INTO event_data (
-                block_hash, block_number, event_index, extrinsic_id, extrinsic_index,
-                phase_type, phase_value, pallet, event_name, topics, raw_data
-            ) VALUES ${valueGroups.join(', ')}
-            RETURNING id;
-        `;
-
-        const result = await this.query(query, allParams, client);
-        return result.rows.map(row => row.id);
+        const chunkSize = eventsDataArray.length > 10000 ? 500 : 1000;
+        
+        return this.executeBatch(
+            eventsDataArray,
+            'event_data',
+            ['block_hash', 'block_number', 'event_index', 'extrinsic_id', 'extrinsic_index', 'phase_type', 'phase_value', 'pallet', 'event_name', 'topics', 'raw_data'],
+            (item) => [
+                item.blockHash,
+                this.prepareBigIntValue(item.blockNumber),
+                item.eventIndex,
+                item.extrinsicId || null,
+                item.extrinsicIndex || null,
+                item.phaseType || null,
+                item.phaseValue || null,
+                item.pallet,
+                item.eventName,
+                item.topics || [],
+                item.rawData ? this.safeBigIntStringify(item.rawData) : null
+            ],
+            chunkSize,
+            'INSERT',
+            client
+        );
     }
 
     // linkExtrinsicEvent removed: use event_data.extrinsic_id foreign key instead
@@ -407,106 +421,53 @@ class ExplorerDatabase {
     }
 
     async upsertAccountProfilesBatch(accountDataArray, client = null) {
-        if (!accountDataArray || accountDataArray.length === 0) {
-            return [];
-        }
-
-        // Build batch UPSERT query with VALUES for all accounts
-        const valueGroups = [];
-        const allParams = [];
-        let paramIndex = 1;
-
-        for (const accountData of accountDataArray) {
-            const params = [
-                accountData.accountId,
-                accountData.displayName || null,
-                accountData.identityJudgement || null,
-                accountData.isValidator || false,
-                accountData.isNominator || false,
-                this.prepareBigIntValue(accountData.currentNonce || 0),
-                this.prepareBigIntValue(accountData.firstSeenBlock),
-                accountData.firstSeenTimestamp || null,
-                this.prepareBigIntValue(accountData.lastActivityBlock),
-                accountData.lastActivityTimestamp || null
-            ];
-
-            allParams.push(...params);
-            
-            // Create parameter placeholders for this account (10 params)
-            const placeholders = [];
-            for (let i = 0; i < 10; i++) {
-                placeholders.push(`$${paramIndex++}`);
-            }
-            valueGroups.push(`(${placeholders.join(', ')})`);
-        }
-
-        const query = `
-            INSERT INTO account_profiles (
-                account_id, display_name, identity_judgement, is_validator, is_nominator,
-                current_nonce, first_seen_block, first_seen_timestamp, last_activity_block, last_activity_timestamp
-            ) VALUES ${valueGroups.join(', ')}
-            ON CONFLICT (account_id) DO UPDATE SET
-                display_name = COALESCE(EXCLUDED.display_name, account_profiles.display_name),
-                identity_judgement = COALESCE(EXCLUDED.identity_judgement, account_profiles.identity_judgement),
-                is_validator = EXCLUDED.is_validator,
-                is_nominator = EXCLUDED.is_nominator,
-                current_nonce = EXCLUDED.current_nonce,
-                last_activity_block = EXCLUDED.last_activity_block,
-                last_activity_timestamp = EXCLUDED.last_activity_timestamp
-            RETURNING id;
-        `;
-
-        const result = await this.query(query, allParams, client);
-        return result.rows.map(row => row.id);
+        return this.executeBatch(
+            accountDataArray,
+            'account_profiles',
+            ['account_id', 'display_name', 'identity_judgement', 'is_validator', 'is_nominator', 'current_nonce', 'first_seen_block', 'first_seen_timestamp', 'last_activity_block', 'last_activity_timestamp'],
+            (item) => [
+                item.accountId,
+                item.displayName || null,
+                item.identityJudgement || null,
+                item.isValidator || false,
+                item.isNominator || false,
+                this.prepareBigIntValue(item.currentNonce || 0),
+                this.prepareBigIntValue(item.firstSeenBlock),
+                item.firstSeenTimestamp || null,
+                this.prepareBigIntValue(item.lastActivityBlock),
+                item.lastActivityTimestamp || null
+            ],
+            2000,
+            'UPSERT',
+            client
+        );
     }
 
     async insertBalanceHistoryBatch(balanceDataArray, client = null) {
-        if (!balanceDataArray || balanceDataArray.length === 0) {
-            return [];
-        }
-
-        // Build batch INSERT query with VALUES for all balance entries
-        const valueGroups = [];
-        const allParams = [];
-        let paramIndex = 1;
-
-        for (const balanceData of balanceDataArray) {
-            const params = [
-                balanceData.accountId,
-                balanceData.blockHash,
-                this.prepareBigIntValue(balanceData.blockNumber),
-                this.prepareBigIntValue(balanceData.balanceFree),
-                this.prepareBigIntValue(balanceData.balanceReserved),
-                this.prepareBigIntValue(balanceData.balanceFrozen || 0),
-                this.prepareBigIntValue(balanceData.nonce),
-                this.prepareBigIntValue(balanceData.consumers || 0),
-                this.prepareBigIntValue(balanceData.providers || 0),
-                this.prepareBigIntValue(balanceData.sufficients || 0),
-                this.prepareBigIntValue(balanceData.freeChange || 0),
-                this.prepareBigIntValue(balanceData.reservedChange || 0)
-            ];
-
-            allParams.push(...params);
-            
-            // Create parameter placeholders for this balance entry (12 params)
-            const placeholders = [];
-            for (let i = 0; i < 12; i++) {
-                placeholders.push(`$${paramIndex++}`);
-            }
-            valueGroups.push(`(${placeholders.join(', ')})`);
-        }
-
-        const query = `
-            INSERT INTO balance_history (
-                account_id, block_hash, block_number, balance_free, balance_reserved, balance_frozen,
-                nonce, consumers, providers, sufficients, free_change, reserved_change
-            ) VALUES ${valueGroups.join(', ')}
-            RETURNING id;
-        `;
-
-        const result = await this.query(query, allParams, client);
-        return result.rows.map(row => row.id);
+        return this.executeBatch(
+            balanceDataArray,
+            'balance_history',
+            ['account_id', 'block_hash', 'block_number', 'balance_free', 'balance_reserved', 'balance_frozen', 'nonce', 'consumers', 'providers', 'sufficients', 'free_change', 'reserved_change'],
+            (item) => [
+                item.accountId,
+                item.blockHash,
+                this.prepareBigIntValue(item.blockNumber),
+                this.prepareBigIntValue(item.balanceFree),
+                this.prepareBigIntValue(item.balanceReserved),
+                this.prepareBigIntValue(item.balanceFrozen || 0),
+                this.prepareBigIntValue(item.nonce),
+                this.prepareBigIntValue(item.consumers || 0),
+                this.prepareBigIntValue(item.providers || 0),
+                this.prepareBigIntValue(item.sufficients || 0),
+                this.prepareBigIntValue(item.freeChange || 0),
+                this.prepareBigIntValue(item.reservedChange || 0)
+            ],
+            2000,
+            'INSERT',
+            client
+        );
     }
+
 
     // ================================
     // DATA SUBMISSIONS AND TRANSFERS
@@ -538,6 +499,30 @@ class ExplorerDatabase {
         return result.rows[0].id;
     }
 
+    async insertDataSubmissionsBatch(submissionDataArray, client = null) {
+        return this.executeBatch(
+            submissionDataArray,
+            'data_submissions',
+            ['block_hash', 'block_number', 'extrinsic_id', 'app_id', 'submitter_account', 'data_size', 'data_index', 'data_hash', 'proof_data', 'submission_fee'],
+            (item) => [
+                item.blockHash,
+                this.prepareBigIntValue(item.blockNumber),
+                item.extrinsicId || null,
+                this.prepareBigIntValue(item.appId),
+                item.submitterAccount,
+                item.dataSize,
+                item.dataIndex || null,
+                item.dataHash || null,
+                item.proofData ? this.safeBigIntStringify(item.proofData) : null,
+                this.prepareBigIntValue(item.submissionFee || 0)
+            ],
+            1000,
+            'INSERT',
+            client
+        );
+    }
+
+
     async insertTransferEvent(transferData, client = null) {
         const query = `
             INSERT INTO transfer_events (
@@ -565,6 +550,31 @@ class ExplorerDatabase {
         return result.rows[0].id;
     }
 
+    async insertTransferEventsBatch(transferDataArray, client = null) {
+        return this.executeBatch(
+            transferDataArray,
+            'transfer_events',
+            ['block_hash', 'block_number', 'extrinsic_id', 'event_id', 'from_account', 'to_account', 'amount', 'transfer_type', 'success', 'fee_paid', 'tip_paid'],
+            (item) => [
+                item.blockHash,
+                this.prepareBigIntValue(item.blockNumber),
+                item.extrinsicId || null,
+                item.eventId || null,
+                item.fromAccount,
+                item.toAccount,
+                this.prepareBigIntValue(item.amount),
+                item.transferType || 'Transfer',
+                item.success !== undefined ? item.success : true,
+                this.prepareBigIntValue(item.feePaid || 0),
+                this.prepareBigIntValue(item.tipPaid || 0)
+            ],
+            1000,
+            'INSERT',
+            client
+        );
+    }
+
+
     async insertStakingEvent(stakingData, client = null) {
         const query = `
             INSERT INTO staking_events (
@@ -589,6 +599,29 @@ class ExplorerDatabase {
         const result = await this.query(query, params, client);
         return result.rows[0].id;
     }
+
+    async insertStakingEventsBatch(stakingDataArray, client = null) {
+        return this.executeBatch(
+            stakingDataArray,
+            'staking_events',
+            ['block_hash', 'block_number', 'event_id', 'event_type', 'validator_account', 'nominator_account', 'amount', 'era_index', 'event_data'],
+            (item) => [
+                item.blockHash,
+                this.prepareBigIntValue(item.blockNumber),
+                item.eventId || null,
+                item.eventType,
+                item.validatorAccount || null,
+                item.nominatorAccount || null,
+                this.prepareBigIntValue(item.amount || 0),
+                this.prepareBigIntValue(item.eraIndex),
+                item.eventData ? this.safeBigIntStringify(item.eventData) : null
+            ],
+            1000,
+            'INSERT',
+            client
+        );
+    }
+
 
     // ================================
     // ANALYTICS OPERATIONS REMOVED

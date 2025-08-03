@@ -11,8 +11,6 @@ SELECT 'account_profiles' AS table_name, COUNT(*) AS record_count FROM account_p
 UNION ALL
 SELECT 'event_data' AS table_name, COUNT(*) AS record_count FROM event_data
 UNION ALL
-SELECT 'extrinsic_events' AS table_name, COUNT(*) AS record_count FROM extrinsic_events
-UNION ALL
 SELECT 'extrinsic_data' AS table_name, COUNT(*) AS record_count FROM extrinsic_data
 UNION ALL
 SELECT 'app_registrations' AS table_name, COUNT(*) AS record_count FROM app_registrations
@@ -95,8 +93,6 @@ WITH all_empty_columns AS (
     SELECT 'extrinsic_data' AS table_name, 'success' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE success IS NOT NULL) UNION ALL
     SELECT 'extrinsic_data' AS table_name, 'error_message' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE error_message IS NOT NULL) UNION ALL
     SELECT 'extrinsic_data' AS table_name, 'method_args' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE method_args IS NOT NULL) UNION ALL
-    SELECT 'extrinsic_data' AS table_name, 'signature_data' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE signature_data IS NOT NULL) UNION ALL
-    SELECT 'extrinsic_data' AS table_name, 'era_data' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE era_data IS NOT NULL) UNION ALL
     SELECT 'extrinsic_data' AS table_name, 'raw_hex' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE raw_hex IS NOT NULL) UNION ALL
     SELECT 'extrinsic_data' AS table_name, 'length_bytes' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE length_bytes IS NOT NULL) UNION ALL
     SELECT 'extrinsic_data' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE indexed_at IS NOT NULL) UNION ALL
@@ -111,13 +107,9 @@ WITH all_empty_columns AS (
     SELECT 'event_data' AS table_name, 'phase_value' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE phase_value IS NOT NULL) UNION ALL
     SELECT 'event_data' AS table_name, 'pallet' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE pallet IS NOT NULL) UNION ALL
     SELECT 'event_data' AS table_name, 'event_name' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE event_name IS NOT NULL) UNION ALL
-    SELECT 'event_data' AS table_name, 'event_data' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE event_data IS NOT NULL) UNION ALL
     SELECT 'event_data' AS table_name, 'topics' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE topics IS NOT NULL) UNION ALL
     SELECT 'event_data' AS table_name, 'raw_data' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE raw_data IS NOT NULL) UNION ALL
     SELECT 'event_data' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE indexed_at IS NOT NULL) UNION ALL
-    -- extrinsic_events
-    SELECT 'extrinsic_events' AS table_name, 'extrinsic_id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_events WHERE extrinsic_id IS NOT NULL) UNION ALL
-    SELECT 'extrinsic_events' AS table_name, 'event_id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_events WHERE event_id IS NOT NULL) UNION ALL
     -- account_profiles
     SELECT 'account_profiles' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE id IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'account_id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE account_id IS NOT NULL) UNION ALL
@@ -126,9 +118,6 @@ WITH all_empty_columns AS (
     SELECT 'account_profiles' AS table_name, 'is_validator' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE is_validator IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'is_nominator' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE is_nominator IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'current_nonce' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE current_nonce IS NOT NULL) UNION ALL
-    SELECT 'account_profiles' AS table_name, 'current_balance_free' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE current_balance_free IS NOT NULL) UNION ALL
-    SELECT 'account_profiles' AS table_name, 'current_balance_reserved' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE current_balance_reserved IS NOT NULL) UNION ALL
-    SELECT 'account_profiles' AS table_name, 'current_balance_frozen' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE current_balance_frozen IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'total_extrinsics_sent' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE total_extrinsics_sent IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'total_extrinsics_received' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE total_extrinsics_received IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'total_transfers_sent' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE total_transfers_sent IS NOT NULL) UNION ALL

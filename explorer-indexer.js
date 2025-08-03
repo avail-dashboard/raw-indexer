@@ -205,11 +205,19 @@ class AvailExplorerIndexer {
             // Extract comprehensive block data
             const blockData = await this.extractor.extractCompleteBlockData(blockNumber);
             
+            // Disconnect from RPC to avoid connection timeouts during long database operations
+            console.log(`  🔌 Disconnecting from RPC before database operations...`);
+            await this.extractor.disconnect();
+            
             console.log(`  💾 Storing block ${blockNumber} in transaction...`);
             // Store ALL data in single atomic transaction
             await this.database.withTransaction(async (client) => {
                 await this.storeCompleteBlockData(blockData, client);
             });
+            
+            // Reconnect for next block (if any)
+            console.log(`  🔗 Reconnecting to RPC...`);
+            await this.extractor.connect();
 
             // Update statistics
             this.updateProcessingStats(blockData);
@@ -248,7 +256,7 @@ class AvailExplorerIndexer {
             authoringVersion: blockData.runtime?.runtimeVersion?.authoringVersion,
             transactionVersion: blockData.runtime?.runtimeVersion?.transactionVersion,
             stateVersion: blockData.runtime?.runtimeVersion?.stateVersion,
-            digestJson: header.digest,
+            digestJson: null, // Skip digest to avoid JSONB processing issues with mega-blocks
             headerRawHex: header.raw
         };
 
@@ -276,139 +284,162 @@ class AvailExplorerIndexer {
         // Execute independent inserts in parallel
         await Promise.all(independentInserts);
 
-        // 3. Store extrinsics using batch insertion
+        // 3. Store extrinsics using chunked insertion
         const extrinsicIds = {};
         
         if (extrinsics.length > 0) {
-            // Prepare all extrinsic data
-            const extrinsicDataArray = extrinsics.map(ext => ({
-                blockHash: blockData.blockHash,
-                blockNumber: header.number,
-                extrinsicIndex: ext.index,
-                extrinsicHash: ext.hash,
-                isSigned: ext.isSigned,
-                signerAccount: ext.signature?.signer,
-                methodPallet: ext.method.pallet,
-                methodName: ext.method.name,
-                nonce: ext.signature?.nonce,
-                tip: ext.signature?.tip,
-                fee: 0, // Would need to extract from events
-                success: this.determineExtrinsicSuccess(ext.index, events),
-                methodArgs: ext.method.args,
-                rawHex: ext.rawHex,
-                lengthBytes: ext.length
-            }));
-
-            // Execute batch extrinsic insertion (single query for all extrinsics)
-            const extrinsicResults = await this.database.insertExtrinsicsBatch(extrinsicDataArray, client);
-
-            // Map results back to extrinsic indices
-            extrinsics.forEach((ext, i) => {
-                extrinsicIds[ext.index] = extrinsicResults[i];
-            });
+            const chunkSize = 1000;
+            
+            for (let i = 0; i < extrinsics.length; i += chunkSize) {
+                const chunk = extrinsics.slice(i, i + chunkSize);
+                
+                for (const ext of chunk) {
+                    const extrinsicData = {
+                        blockHash: blockData.blockHash,
+                        blockNumber: header.number,
+                        extrinsicIndex: ext.index,
+                        extrinsicHash: ext.hash,
+                        isSigned: ext.isSigned,
+                        signerAccount: ext.signature?.signer,
+                        methodPallet: ext.method.pallet,
+                        methodName: ext.method.name,
+                        nonce: ext.signature?.nonce,
+                        tip: ext.signature?.tip,
+                        fee: 0, // Would need to extract from events
+                        success: this.determineExtrinsicSuccess(ext.index, events),
+                        methodArgs: ext.method.args,
+                        rawHex: ext.rawHex,
+                        lengthBytes: ext.length
+                    };
+                    
+                    const extrinsicId = await this.database.insertExtrinsic(extrinsicData, client);
+                    extrinsicIds[ext.index] = extrinsicId;
+                }
+            }
         }
 
-        // 4. Store events using batch insertion
+        // 4. Store events using chunked insertion
         const eventIds = {};
         
         if (events.length > 0) {
-            // Prepare all event data
-            const eventDataArray = events.map(event => {
-                const extrinsicIndex = this.extractExtrinsicIndex(event.phase);
-                return {
-                    blockHash: blockData.blockHash,
-                    blockNumber: header.number,
-                    eventIndex: event.index,
-                    extrinsicId: extrinsicIndex !== null ? extrinsicIds[extrinsicIndex] : null,
-                    extrinsicIndex: extrinsicIndex,
-                    phaseType: this.getPhaseType(event.phase),
-                    phaseValue: this.getPhaseValue(event.phase),
-                    pallet: event.pallet,
-                    eventName: event.eventName,
-                    topics: event.topics,
-                    rawData: event.rawData
-                };
-            });
-
-            // Execute batch event insertion (single query for all events)
-            const eventResults = await this.database.insertEventsBatch(eventDataArray, client);
-
-            // Map results back to event indices
-            events.forEach((event, i) => {
-                eventIds[event.index] = eventResults[i];
-            });
-
-            // Extrinsic-event linking removed: relationships stored via event_data.extrinsic_id
+            const chunkSize = events.length > 10000 ? 500 : 1000;
+            
+            for (let i = 0; i < events.length; i += chunkSize) {
+                const chunk = events.slice(i, i + chunkSize);
+                
+                for (const event of chunk) {
+                    const extrinsicIndex = this.extractExtrinsicIndex(event.phase);
+                    const eventData = {
+                        blockHash: blockData.blockHash,
+                        blockNumber: header.number,
+                        eventIndex: event.index,
+                        extrinsicId: extrinsicIndex !== null ? extrinsicIds[extrinsicIndex] : null,
+                        extrinsicIndex: extrinsicIndex,
+                        phaseType: this.getPhaseType(event.phase),
+                        phaseValue: this.getPhaseValue(event.phase),
+                        pallet: event.pallet,
+                        eventName: event.eventName,
+                        topics: event.topics,
+                        rawData: event.rawData
+                    };
+                    
+                    const eventId = await this.database.insertEvent(eventData, client);
+                    eventIds[event.index] = eventId;
+                }
+            }
         }
 
-        // 5. Store account data using batch operations
+        // 5. Store account data using chunked insertion
         if (accounts && accounts.accounts && accounts.accounts.length > 0) {
-            // Prepare all account profile data
-            const accountProfilesData = accounts.accounts.map(account => ({
-                accountId: account.accountId,
-                currentNonce: account.nonce,
-                isValidator: false, // Would need additional logic
-                isNominator: false,
-                firstSeenBlock: header.number,
-                firstSeenTimestamp: blockData.timestamp,
-                lastActivityBlock: header.number,
-                lastActivityTimestamp: blockData.timestamp
-            }));
-
-            // Prepare all balance history data
-            const balanceHistoryData = accounts.accounts.map(account => ({
-                accountId: account.accountId,
-                blockHash: blockData.blockHash,
-                blockNumber: header.number,
-                balanceFree: account.balance.free,
-                balanceReserved: account.balance.reserved,
-                balanceFrozen: account.balance.frozen,
-                nonce: account.nonce,
-                consumers: account.consumers,
-                providers: account.providers,
-                sufficients: 0 // Would need to extract from storage
-            }));
-
-            // Execute batch operations in parallel
-            await Promise.all([
-                this.database.upsertAccountProfilesBatch(accountProfilesData, client),
-                this.database.insertBalanceHistoryBatch(balanceHistoryData, client)
-            ]);
+            const chunkSize = 2000;
+            
+            for (let i = 0; i < accounts.accounts.length; i += chunkSize) {
+                const chunk = accounts.accounts.slice(i, i + chunkSize);
+                
+                // Process account profiles and balance history for each account
+                for (const account of chunk) {
+                    const accountProfileData = {
+                        accountId: account.accountId,
+                        currentNonce: account.nonce,
+                        isValidator: false, // Would need additional logic
+                        isNominator: false,
+                        firstSeenBlock: header.number,
+                        firstSeenTimestamp: blockData.timestamp,
+                        lastActivityBlock: header.number,
+                        lastActivityTimestamp: blockData.timestamp
+                    };
+                    
+                    const balanceHistoryData = {
+                        accountId: account.accountId,
+                        blockHash: blockData.blockHash,
+                        blockNumber: header.number,
+                        balanceFree: account.balance.free,
+                        balanceReserved: account.balance.reserved,
+                        balanceFrozen: account.balance.frozen,
+                        nonce: account.nonce,
+                        consumers: account.consumers,
+                        providers: account.providers,
+                        sufficients: 0 // Would need to extract from storage
+                    };
+                    
+                    // Execute account operations in parallel for each account
+                    await Promise.all([
+                        this.database.upsertAccountProfile(accountProfileData, client),
+                        this.database.insertBalanceHistory(balanceHistoryData, client)
+                    ]);
+                }
+            }
         }
 
-        // 6. Store transfer events
+        // 6. Store transfer events using chunked insertion
         const transferEvents = this.extractTransferEvents(events, eventIds);
-        for (const transfer of transferEvents) {
-            const transferData = {
-                blockHash: blockData.blockHash,
-                blockNumber: header.number,
-                extrinsicId: transfer.extrinsicId,
-                eventId: transfer.eventId,
-                fromAccount: transfer.from,
-                toAccount: transfer.to,
-                amount: transfer.amount,
-                transferType: transfer.type,
-                success: true
-            };
-
-            await this.database.insertTransferEvent(transferData, client);
+        if (transferEvents.length > 0) {
+            const chunkSize = 1000;
+            
+            for (let i = 0; i < transferEvents.length; i += chunkSize) {
+                const chunk = transferEvents.slice(i, i + chunkSize);
+                
+                for (const transfer of chunk) {
+                    const transferData = {
+                        blockHash: blockData.blockHash,
+                        blockNumber: header.number,
+                        extrinsicId: transfer.extrinsicId,
+                        eventId: transfer.eventId,
+                        fromAccount: transfer.from,
+                        toAccount: transfer.to,
+                        amount: transfer.amount,
+                        transferType: transfer.type,
+                        success: true
+                    };
+                    
+                    await this.database.insertTransferEvent(transferData, client);
+                }
+            }
         }
 
-        // 7. Store data submissions
+        // 7. Store data submissions using chunked insertion
         const dataSubmissions = this.extractDataSubmissions(events, extrinsicIds, eventIds);
-        for (const submission of dataSubmissions) {
-            const submissionData = {
-                blockHash: blockData.blockHash,
-                blockNumber: header.number,
-                extrinsicId: submission.extrinsicId,
-                appId: submission.appId,
-                submitterAccount: submission.submitter,
-                dataSize: submission.dataSize,
-                dataIndex: submission.dataIndex,
-                submissionFee: submission.fee || 0
-            };
-
-            await this.database.insertDataSubmission(submissionData, client);
+        if (dataSubmissions.length > 0) {
+            const chunkSize = 1000;
+            
+            for (let i = 0; i < dataSubmissions.length; i += chunkSize) {
+                const chunk = dataSubmissions.slice(i, i + chunkSize);
+                
+                for (const submission of chunk) {
+                    const submissionData = {
+                        blockHash: blockData.blockHash,
+                        blockNumber: header.number,
+                        extrinsicId: submission.extrinsicId,
+                        appId: submission.appId,
+                        submitterAccount: submission.submitter,
+                        dataSize: submission.dataSize,
+                        dataIndex: submission.dataIndex,
+                        submissionFee: submission.fee || 0
+                    };
+                    
+                    await this.database.insertDataSubmission(submissionData, client);
+                }
+            }
         }
 
         // Analytics storage removed - just storing raw blockchain data
