@@ -139,21 +139,58 @@ class AvailExplorerIndexer {
         }
     }
 
-    // Process a range of blocks sequentially
+    // Process a range of blocks with pipeline processing
     async processBlockRange(startBlock, endBlock) {
         const totalBlocks = endBlock - startBlock + 1;
-        console.log(`\n🔄 Processing ${totalBlocks} blocks sequentially...`);
+        console.log(`\n🔄 Processing ${totalBlocks} blocks with pipeline processing...`);
 
+        let pendingStorage = null; // Track storage operation for previous block
+        
         for (let blockNum = startBlock; blockNum <= endBlock && !this.shouldStop; blockNum++) {
             try {
-                const blockData = await this.processBlock(blockNum);
+                // Step 1: Start extraction for current block (in parallel with previous storage)
+                const extractionPromise = this.extractBlockData(blockNum);
+                
+                // Step 2: Wait for previous block's storage to complete (if any)
+                if (pendingStorage) {
+                    await pendingStorage.promise;
+                    console.log(`✅ Block ${pendingStorage.blockNumber} storage completed`);
+                }
+                
+                // Step 3: Complete extraction for current block
+                const blockData = await extractionPromise;
+                
+                // Skip if already processed
+                if (blockData.skipped) {
+                    this.lastProcessedBlock = blockNum;
+                    const progress = ((blockNum - startBlock + 1) / totalBlocks * 100).toFixed(1);
+                    console.log(`✅ Block ${blockNum} processed (${progress}%)`);
+                    continue;
+                }
+                
+                // Step 4: Start storage for current block (don't wait)
+                pendingStorage = {
+                    blockNumber: blockNum,
+                    promise: this.storeBlockData(blockData, blockNum)
+                };
+                
                 this.lastProcessedBlock = blockNum;
                 
                 // Progress reporting
                 const progress = ((blockNum - startBlock + 1) / totalBlocks * 100).toFixed(1);
-                console.log(`✅ Block ${blockNum} processed (${progress}%)`);
+                console.log(`✅ Block ${blockNum} extraction completed, storage started (${progress}%)`);
                 
             } catch (error) {
+                // Wait for any pending storage before handling error
+                if (pendingStorage) {
+                    try {
+                        await pendingStorage.promise;
+                    } catch (storageError) {
+                        console.error(`❌ Storage error for block ${pendingStorage.blockNumber}: ${storageError.message}`);
+                    }
+                    pendingStorage = null;
+                }
+                
                 console.error(`❌ Block ${blockNum} failed: ${error.message}`);
                 this.stats.failedBlocks++;
                 this.stats.errors.push({
@@ -167,8 +204,12 @@ class AvailExplorerIndexer {
                     throw error;
                 }
             }
-
-            // Rate limiting now handled at API level in explorer-extractor
+        }
+        
+        // Wait for final block's storage to complete
+        if (pendingStorage) {
+            await pendingStorage.promise;
+            console.log(`✅ Block ${pendingStorage.blockNumber} storage completed`);
         }
 
         if (this.shouldStop) {
@@ -178,9 +219,8 @@ class AvailExplorerIndexer {
         }
     }
 
-    // Process a single block with complete data extraction and storage
-    async processBlock(blockNumber) {
-        const blockStartTime = Date.now();
+    // Extract block data (RPC phase) - can run in parallel with storage of previous block
+    async extractBlockData(blockNumber) {
         console.log(`  🔍 Checking if block ${blockNumber} already exists...`);
         
         // Check if block already exists (atomic check)
@@ -195,7 +235,18 @@ class AvailExplorerIndexer {
             console.log(`  📊 Extracting block ${blockNumber} data...`);
             // Extract comprehensive block data
             const blockData = await this.extractor.extractCompleteBlockData(blockNumber);
-            
+            console.log(`  ✅ Block ${blockNumber} extraction completed`);
+            return blockData;
+
+        } catch (error) {
+            console.error(`  ❌ Block ${blockNumber} extraction failed: ${error.message}`);
+            throw error;
+        }
+    }
+    
+    // Store block data (Database phase) - can run in parallel with extraction of next block
+    async storeBlockData(blockData, blockNumber) {
+        try {
             console.log(`  💾 Storing block ${blockNumber} in transaction...`);
             // Store ALL data in single atomic transaction
             await this.database.withTransaction(async (client) => {
@@ -204,15 +255,24 @@ class AvailExplorerIndexer {
 
             // Update statistics
             this.updateProcessingStats(blockData);
-            console.log(`  ✅ Block ${blockNumber} fully processed and committed`);
+            console.log(`  ✅ Block ${blockNumber} storage committed`);
             
             return blockData;
 
         } catch (error) {
-            console.error(`  ❌ Block ${blockNumber} processing failed: ${error.message}`);
+            console.error(`  ❌ Block ${blockNumber} storage failed: ${error.message}`);
             console.error(`     Will retry on next run (transaction rolled back)`);
             throw error;
         }
+    }
+
+    // Process a single block with complete data extraction and storage (legacy method for compatibility)
+    async processBlock(blockNumber) {
+        const blockData = await this.extractBlockData(blockNumber);
+        if (blockData.skipped) {
+            return blockData;
+        }
+        return await this.storeBlockData(blockData, blockNumber);
     }
 
     // Store complete block data in database within transaction
