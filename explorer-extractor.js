@@ -591,10 +591,10 @@ class AvailExplorerExtractor {
 
             accountData.summary.totalAccounts = allAccounts.length;
             
-            // Analyze accounts for activity (limited sample)
-            const sampleAccounts = allAccounts.slice(0, 50);
+            // Process all accounts (not just sample)
+            console.log(`      🔄 Processing all ${allAccounts.length} accounts...`);
             
-            for (const [accountId, accountInfo] of sampleAccounts) {
+            for (const [accountId, accountInfo] of allAccounts) {
                 const account = {
                     accountId: accountId.toString(),
                     nonce: this.safeBigIntValue(accountInfo.nonce),
@@ -614,6 +614,8 @@ class AvailExplorerExtractor {
 
                 accountData.accounts.push(account);
             }
+            
+            console.log(`      ✅ Processed ${accountData.accounts.length} accounts`);
 
             return accountData;
 
