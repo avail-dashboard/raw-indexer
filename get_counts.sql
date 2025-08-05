@@ -1,3 +1,11 @@
+-- To run this with a specific block number, you can use psql's variable substitution.
+-- For example, from the command line:
+-- psql -v block_number=626 -f get_counts.sql
+
+-- Or within psql before running the file:
+-- \set block_number 626
+-- \i get_counts.sql
+
 -- Query to get the count of all the records in each table
 SELECT 'transfer_events' AS table_name, COUNT(*) AS record_count FROM transfer_events
 UNION ALL
@@ -20,6 +28,27 @@ UNION ALL
 SELECT 'block_headers' AS table_name, COUNT(*) AS record_count FROM block_headers
 UNION ALL
 SELECT 'schema_migrations' AS table_name, COUNT(*) AS record_count FROM schema_migrations;
+
+-- Query to get the count of records for a specific block number
+-- Usage: psql -v block_number=93712 -f get_counts.sql
+-- The :block_number syntax works with psql -v, but for compatibility, we'll also provide a version that works directly
+SELECT 'transfer_events_in_block' AS table_name, COUNT(*) AS record_count FROM transfer_events WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'staking_events_in_block' AS table_name, COUNT(*) AS record_count FROM staking_events WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'data_submissions_in_block' AS table_name, COUNT(*) AS record_count FROM data_submissions WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'balance_history_in_block' AS table_name, COUNT(*) AS record_count FROM balance_history WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'extrinsic_data_in_block' AS table_name, COUNT(*) AS record_count FROM extrinsic_data WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'event_data_in_block' AS table_name, COUNT(*) AS record_count FROM event_data WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'kate_commitments_in_block' AS table_name, COUNT(*) AS record_count FROM kate_commitments WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'accounts_active_in_block' AS table_name, COUNT(*) AS record_count from account_profiles where first_seen_block <= :'block_number' AND last_activity_block >= :'block_number'
+UNION ALL
+SELECT 'app_registrations_active_in_block' AS table_name, COUNT(*) AS record_count from app_registrations where registered_at_block <= :'block_number';
 
 -- Query to find empty columns in each table
 WITH all_empty_columns AS (

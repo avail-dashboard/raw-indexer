@@ -32,7 +32,7 @@ class AvailExplorerExtractor {
         if (this.limiter) {
             return await this.limiter.schedule(apiFunction);
         } else {
-            return await apiFunction(); 
+            return await apiFunction();
         }
     }
 
@@ -268,66 +268,46 @@ class AvailExplorerExtractor {
             let totalPages = 0;
             
             try {
-                console.log(`      🚀 Loading accounts in parallel batches of ${batchSize}...`);
-                let hasMoreAccounts = true;
-                let startKeys = [null]; // Start with null key for first batch
+                console.log(`      📄 Loading accounts with unlimited pagination...`);
+                let startKey = null;
+                let page = 0;
                 
-                while (hasMoreAccounts && startKeys.length > 0) {
-                    // Prepare batch of parallel requests
-                    const batchPromises = [];
-                    const currentBatchSize = Math.min(batchSize, startKeys.length || 1);
+                while (true) {
+                    page++;
+                    console.log(`      📄 Loading account page ${page}...`);
                     
-                    for (let i = 0; i < currentBatchSize; i++) {
-                        const startKey = startKeys[i] || null;
-                        const batchPromise = this.scheduleApiCall(() => 
-                            this.api.query.system.account.entriesPaged({
-                                args: [],
-                                pageSize: pageSize,
-                                startKey: startKey
-                            }, blockHash)
-                        );
-                        batchPromises.push(batchPromise);
+                    const pageAccounts = await this.scheduleApiCall(() => this.api.query.system.account.entriesPaged({
+                        args: [],
+                        pageSize: pageSize,
+                        startKey: startKey
+                    }, blockHash));
+                    
+                    this.extractionStats.totalApiCalls++;
+                    
+                    if (pageAccounts.length === 0) {
+                        console.log(`      ✅ No more accounts, stopping at page ${page}`);
+                        break;
                     }
                     
-                    // Execute batch in parallel
-                    const batchResults = await Promise.all(batchPromises);
-                    this.extractionStats.totalApiCalls += batchResults.length;
+                    allAccounts.push(...pageAccounts);
+                    totalPages = page;
                     
-                    console.log(`      📦 Batch ${Math.floor(totalPages / batchSize) + 1}: Processing ${batchResults.length} pages...`);
+                    console.log(`      ✅ Page ${page}: +${pageAccounts.length} accounts (Total: ${allAccounts.length})`);
                     
-                    // Process batch results
-                    const nextStartKeys = [];
-                    let batchAccountCount = 0;
-                    
-                    for (const pageAccounts of batchResults) {
-                        if (pageAccounts.length === 0) {
-                            // No more accounts in this page
-                            continue;
-                        }
-                        
-                        allAccounts.push(...pageAccounts);
-                        batchAccountCount += pageAccounts.length;
-                        totalPages++;
-                        
-                        // Check if this page was full (more pages might exist)
-                        if (pageAccounts.length === pageSize) {
-                            const lastAccount = pageAccounts[pageAccounts.length - 1];
-                            nextStartKeys.push(lastAccount[0]);
-                        }
-                        // If pageAccounts.length < pageSize, this was the last page for this branch
+                    // Set start key for next page
+                    if (pageAccounts.length === pageSize) {
+                        startKey = pageAccounts[pageAccounts.length - 1][0];
+                    } else {
+                        // Last page (incomplete page)
+                        console.log(`      ✅ Last page reached (${pageAccounts.length} < ${pageSize})`);
+                        break;
                     }
-                    
-                    console.log(`      ✅ Batch completed: +${batchAccountCount} accounts (Total: ${allAccounts.length})`);
-                    
-                    // Prepare for next batch
-                    startKeys = nextStartKeys;
-                    hasMoreAccounts = nextStartKeys.length > 0;
                 }
                 
-                console.log(`      🎉 Smart pagination completed: ${allAccounts.length} accounts in ${totalPages} pages`);
+                console.log(`      🎉 Account loading completed: ${allAccounts.length} accounts in ${totalPages} pages`);
                 
             } catch (e) {
-                console.warn(`⚠️ Parallel account loading failed: ${e.message}, falling back to no accounts`);
+                console.warn(`⚠️ Account loading failed: ${e.message}, falling back to no accounts`);
                 allAccounts = [];
             }
             
@@ -567,61 +547,45 @@ class AvailExplorerExtractor {
             let allAccounts = [];
             
             try {
-                console.log(`      👥 Loading accounts for analysis in parallel batches...`);
-                let hasMoreAccounts = true;
-                let startKeys = [null];
-                let totalPagesLoaded = 0;
+                console.log(`      👥 Loading accounts for analysis (unlimited)...`);
+                let startKey = null;
+                let page = 0;
                 
-                while (hasMoreAccounts && startKeys.length > 0 && totalPagesLoaded < maxAnalysisPages) {
-                    // Prepare batch of parallel requests
-                    const batchPromises = [];
-                    const currentBatchSize = Math.min(batchSize, startKeys.length, maxAnalysisPages - totalPagesLoaded);
+                while (true) {
+                    page++;
+                    console.log(`      👥 Loading analysis page ${page}...`);
                     
-                    for (let i = 0; i < currentBatchSize; i++) {
-                        const startKey = startKeys[i] || null;
-                        const batchPromise = this.api.query.system.account.entriesPaged({
-                            args: [],
-                            pageSize: pageSize,
-                            startKey: startKey
-                        }, blockHash);
-                        batchPromises.push(batchPromise);
+                    const pageAccounts = await this.api.query.system.account.entriesPaged({
+                        args: [],
+                        pageSize: pageSize,
+                        startKey: startKey
+                    }, blockHash);
+                    
+                    this.extractionStats.totalApiCalls++;
+                    
+                    if (pageAccounts.length === 0) {
+                        console.log(`      ✅ No more accounts for analysis, stopping at page ${page}`);
+                        break;
                     }
                     
-                    // Execute batch in parallel
-                    const batchResults = await Promise.all(batchPromises);
-                    this.extractionStats.totalApiCalls += batchResults.length;
+                    allAccounts.push(...pageAccounts);
                     
-                    // Process batch results
-                    const nextStartKeys = [];
-                    let batchAccountCount = 0;
+                    console.log(`      ✅ Analysis page ${page}: +${pageAccounts.length} accounts (Total: ${allAccounts.length})`);
                     
-                    for (const pageAccounts of batchResults) {
-                        if (pageAccounts.length === 0) {
-                            continue;
-                        }
-                        
-                        allAccounts.push(...pageAccounts);
-                        batchAccountCount += pageAccounts.length;
-                        totalPagesLoaded++;
-                        
-                        // Check if this page was full and we haven't hit the analysis limit
-                        if (pageAccounts.length === pageSize && totalPagesLoaded < maxAnalysisPages) {
-                            const lastAccount = pageAccounts[pageAccounts.length - 1];
-                            nextStartKeys.push(lastAccount[0]);
-                        }
+                    // Set start key for next page
+                    if (pageAccounts.length === pageSize) {
+                        startKey = pageAccounts[pageAccounts.length - 1][0];
+                    } else {
+                        // Last page (incomplete page)
+                        console.log(`      ✅ Analysis complete - last page reached`);
+                        break;
                     }
-                    
-                    console.log(`      📦 Analysis batch: +${batchAccountCount} accounts (Total: ${allAccounts.length}, Pages: ${totalPagesLoaded})`);
-                    
-                    // Prepare for next batch
-                    startKeys = nextStartKeys;
-                    hasMoreAccounts = nextStartKeys.length > 0 && totalPagesLoaded < maxAnalysisPages;
                 }
                 
-                console.log(`      ✅ Account analysis completed: ${allAccounts.length} accounts in ${totalPagesLoaded} pages`);
+                console.log(`      ✅ Account analysis completed: ${allAccounts.length} accounts`);
                 
             } catch (e) {
-                console.warn(`⚠️ Parallel account analysis failed: ${e.message}`);
+                console.warn(`⚠️ Account analysis failed: ${e.message}`);
                 allAccounts = [];
             }
 
