@@ -279,7 +279,7 @@ class AvailExplorerIndexer {
     async storeCompleteBlockData(blockData, client = null) {
         const { header, extrinsics, events, storage, kate, accounts } = blockData;
 
-        // 1. Store block header
+        // 1. Store block header with ALL runtime data
         const blockHeaderData = {
             blockNumber: header.number,
             blockHash: blockData.blockHash,
@@ -294,12 +294,20 @@ class AvailExplorerIndexer {
             dataSubmissionsCount: 0, // Will count from events if needed
             totalFees: '0', // No fee calculation
             totalTips: '0', // No tip calculation
+            // Runtime version data
             specVersion: blockData.runtime?.runtimeVersion?.specVersion,
             implVersion: blockData.runtime?.runtimeVersion?.implVersion,
             authoringVersion: blockData.runtime?.runtimeVersion?.authoringVersion,
             transactionVersion: blockData.runtime?.runtimeVersion?.transactionVersion,
             stateVersion: blockData.runtime?.runtimeVersion?.stateVersion,
-            digestJson: null, // Skip digest to avoid JSONB processing issues with mega-blocks
+            // NEW: Additional runtime metadata
+            specName: blockData.runtime?.runtimeVersion?.specName,
+            implName: blockData.runtime?.runtimeVersion?.implName,
+            chainName: blockData.runtime?.chain,
+            nodeVersion: blockData.runtime?.nodeVersion,
+            chainProperties: blockData.runtime?.properties,
+            // Header digest data (now enabled)
+            digestJson: header.digest,
             headerRawHex: header.raw
         };
 
@@ -318,7 +326,12 @@ class AvailExplorerIndexer {
                 commitmentHex: kate.commitmentHex || null,
                 proofData: kate.sampleDataProof || null,
                 utilizationPercentage: 0, // No analytics calculation
-                appDataCount: 0 // No analytics calculation
+                appDataCount: 0, // No analytics calculation
+                // NEW: Store complete Kate data
+                sampleDataProof: kate.sampleDataProof || null,
+                sampleRowData: kate.sampleRowData || null,
+                kateAvailable: kate.available !== undefined ? kate.available : true,
+                kateExtractionNote: kate.error ? `Kate extraction error: ${kate.error}` : null
             };
 
             independentInserts.push(this.database.insertKateCommitment(kateData, client));
@@ -631,7 +644,72 @@ class AvailExplorerIndexer {
             await Promise.all(specializedOperations);
         }
 
-        // Analytics storage removed - just storing raw blockchain data
+        // NEW: Store additional blockchain data that was previously discarded
+        const additionalDataOperations = [];
+
+        // 1. Store storage state data
+        if (storage) {
+            const storageStateData = {
+                blockHash: blockData.blockHash,
+                blockNumber: header.number,
+                systemData: storage.system || null,
+                balancesData: storage.balances || null,
+                totalIssuance: storage.balances?.totalIssuance || 0,
+                daNextAppId: storage.dataAvailability?.nextAppId || 0,
+                daAppKeys: storage.dataAvailability?.appKeys || null,
+                daDataSubmissions: storage.dataAvailability?.dataSubmissions || null,
+                sessionValidators: storage.session?.validators || null,
+                sessionValidatorCount: storage.session?.validatorCount || 0,
+                stakingCurrentEra: storage.staking?.currentEra || 0,
+                storageExtractionNote: storage.system?.note || null
+            };
+            additionalDataOperations.push(this.database.insertStorageState(storageStateData, client));
+        }
+
+        // 2. Store network statistics
+        if (blockData.networkStats) {
+            const networkStatsData = {
+                blockHash: blockData.blockHash,
+                blockNumber: header.number,
+                extrinsicsCount: blockData.networkStats.block?.extrinsicsCount || extrinsics.length,
+                eventsCount: blockData.networkStats.block?.eventsCount || events.length,
+                signedExtrinsicsCount: blockData.networkStats.block?.signedExtrinsics || 0,
+                unsignedExtrinsicsCount: blockData.networkStats.block?.unsignedExtrinsics || 0,
+                totalTips: blockData.networkStats.fees?.totalTips || 0,
+                totalFees: blockData.networkStats.fees?.totalFees || 0,
+                averageTip: blockData.networkStats.fees?.averageTip || 0,
+                averageFee: blockData.networkStats.fees?.averageFee || 0,
+                daSubmissionsCount: blockData.networkStats.dataAvailability?.dataSubmissions || 0,
+                daTotalDataSize: blockData.networkStats.dataAvailability?.totalDataSize || 0,
+                daUniqueAppsCount: blockData.networkStats.dataAvailability?.uniqueApps || 0,
+                totalAccountsCount: blockData.networkStats.accounts?.total || 0,
+                activeAccountsCount: blockData.networkStats.accounts?.active || 0
+            };
+            additionalDataOperations.push(this.database.insertNetworkStatistics(networkStatsData, client));
+        }
+
+        // 3. Store balances summary
+        if (storage?.balances?.totalIssuance) {
+            const balancesSummaryData = {
+                blockHash: blockData.blockHash,
+                blockNumber: header.number,
+                totalIssuance: storage.balances.totalIssuance,
+                totalBalanceAccounts: storage.balances.totalBalanceAccounts || 0,
+                totalFreeBalance: 0, // Would need calculation
+                totalReservedBalance: 0, // Would need calculation  
+                totalFrozenBalance: 0, // Would need calculation
+                balancePagesLoaded: storage.balances.totalPages || 0,
+                balanceExtractionNote: storage.balances.note || null
+            };
+            additionalDataOperations.push(this.database.insertBalancesSummary(balancesSummaryData, client));
+        }
+
+        // Execute additional data storage in parallel
+        if (additionalDataOperations.length > 0) {
+            await Promise.all(additionalDataOperations);
+        }
+
+        // Complete blockchain data storage - nothing discarded!
     }
 
     // Extract specific event types for specialized storage

@@ -170,10 +170,11 @@ class ExplorerDatabase {
                 extrinsics_count, events_count, data_submissions_count, 
                 total_fees, total_tips,
                 spec_version, impl_version, authoring_version, transaction_version, state_version,
-                header_raw_hex, extraction_version
+                spec_name, impl_name, chain_name, node_version, chain_properties,
+                digest_json, header_raw_hex, extraction_version
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 
-                $15, $16, $17, $18, $19, $20, $21
+                $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
             )
             RETURNING id;
         `;
@@ -198,6 +199,12 @@ class ExplorerDatabase {
             this.prepareBigIntValue(blockData.authoringVersion),
             this.prepareBigIntValue(blockData.transactionVersion),
             this.prepareBigIntValue(blockData.stateVersion),
+            blockData.specName || null,
+            blockData.implName || null,
+            blockData.chainName || null,
+            blockData.nodeVersion || null,
+            blockData.chainProperties ? this.safeBigIntStringify(blockData.chainProperties) : null,
+            blockData.digestJson ? this.safeBigIntStringify(blockData.digestJson) : null,
             blockData.headerRawHex || null,
             '2.0.0'
         ];
@@ -210,8 +217,9 @@ class ExplorerDatabase {
         const query = `
             INSERT INTO kate_commitments (
                 block_hash, block_number, rows, cols, data_root, block_length,
-                commitment_hex, proof_data, utilization_percentage, app_data_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                commitment_hex, proof_data, utilization_percentage, app_data_count,
+                sample_data_proof, sample_row_data, kate_available, kate_extraction_note
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id;
         `;
 
@@ -225,7 +233,101 @@ class ExplorerDatabase {
             kateData.commitmentHex || null,
             kateData.proofData ? this.safeBigIntStringify(kateData.proofData) : null,
             kateData.utilizationPercentage || 0,
-            kateData.appDataCount || 0
+            kateData.appDataCount || 0,
+            kateData.sampleDataProof ? this.safeBigIntStringify(kateData.sampleDataProof) : null,
+            kateData.sampleRowData ? this.safeBigIntStringify(kateData.sampleRowData) : null,
+            kateData.kateAvailable !== undefined ? kateData.kateAvailable : true,
+            kateData.kateExtractionNote || null
+        ];
+
+        const result = await this.query(query, params, client);
+        return result.rows[0].id;
+    }
+
+    async insertStorageState(storageData, client = null) {
+        const query = `
+            INSERT INTO storage_states (
+                block_hash, block_number, system_data, balances_data, total_issuance,
+                da_next_app_id, da_app_keys, da_data_submissions,
+                session_validators, session_validator_count, staking_current_era,
+                storage_extraction_note
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id;
+        `;
+
+        const params = [
+            storageData.blockHash,
+            this.prepareBigIntValue(storageData.blockNumber),
+            storageData.systemData ? this.safeBigIntStringify(storageData.systemData) : null,
+            storageData.balancesData ? this.safeBigIntStringify(storageData.balancesData) : null,
+            this.prepareBigIntValue(storageData.totalIssuance || 0),
+            this.prepareBigIntValue(storageData.daNextAppId || 0),
+            storageData.daAppKeys ? this.safeBigIntStringify(storageData.daAppKeys) : null,
+            storageData.daDataSubmissions ? this.safeBigIntStringify(storageData.daDataSubmissions) : null,
+            storageData.sessionValidators ? this.safeBigIntStringify(storageData.sessionValidators) : null,
+            storageData.sessionValidatorCount || 0,
+            this.prepareBigIntValue(storageData.stakingCurrentEra || 0),
+            storageData.storageExtractionNote || null
+        ];
+
+        const result = await this.query(query, params, client);
+        return result.rows[0].id;
+    }
+
+    async insertNetworkStatistics(networkData, client = null) {
+        const query = `
+            INSERT INTO network_statistics (
+                block_hash, block_number, extrinsics_count, events_count,
+                signed_extrinsics_count, unsigned_extrinsics_count,
+                total_tips, total_fees, average_tip, average_fee,
+                da_submissions_count, da_total_data_size, da_unique_apps_count,
+                total_accounts_count, active_accounts_count
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            RETURNING id;
+        `;
+
+        const params = [
+            networkData.blockHash,
+            this.prepareBigIntValue(networkData.blockNumber),
+            networkData.extrinsicsCount || 0,
+            networkData.eventsCount || 0,
+            networkData.signedExtrinsicsCount || 0,
+            networkData.unsignedExtrinsicsCount || 0,
+            this.prepareBigIntValue(networkData.totalTips || 0),
+            this.prepareBigIntValue(networkData.totalFees || 0),
+            this.prepareBigIntValue(networkData.averageTip || 0),
+            this.prepareBigIntValue(networkData.averageFee || 0),
+            networkData.daSubmissionsCount || 0,
+            this.prepareBigIntValue(networkData.daTotalDataSize || 0),
+            networkData.daUniqueAppsCount || 0,
+            networkData.totalAccountsCount || 0,
+            networkData.activeAccountsCount || 0
+        ];
+
+        const result = await this.query(query, params, client);
+        return result.rows[0].id;
+    }
+
+    async insertBalancesSummary(balancesData, client = null) {
+        const query = `
+            INSERT INTO balances_summary (
+                block_hash, block_number, total_issuance,
+                total_balance_accounts, total_free_balance, total_reserved_balance, total_frozen_balance,
+                balance_pages_loaded, balance_extraction_note
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id;
+        `;
+
+        const params = [
+            balancesData.blockHash,
+            this.prepareBigIntValue(balancesData.blockNumber),
+            this.prepareBigIntValue(balancesData.totalIssuance || 0),
+            balancesData.totalBalanceAccounts || 0,
+            this.prepareBigIntValue(balancesData.totalFreeBalance || 0),
+            this.prepareBigIntValue(balancesData.totalReservedBalance || 0),
+            this.prepareBigIntValue(balancesData.totalFrozenBalance || 0),
+            balancesData.balancePagesLoaded || 0,
+            balancesData.balanceExtractionNote || null
         ];
 
         const result = await this.query(query, params, client);
