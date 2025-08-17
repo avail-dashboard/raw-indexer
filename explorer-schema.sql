@@ -342,6 +342,16 @@ CREATE UNIQUE INDEX idx_block_headers_hash_unique ON block_headers(block_hash);
 CREATE INDEX idx_block_headers_timestamp ON block_headers(timestamp_utc);
 CREATE INDEX idx_block_headers_author ON block_headers(author_account);
 
+-- Block Processing Performance Optimization
+CREATE INDEX idx_block_headers_processing 
+ON block_headers (block_number, indexed_at);
+
+CREATE INDEX idx_block_headers_latest 
+ON block_headers (indexed_at DESC, block_number DESC);
+
+CREATE INDEX idx_block_headers_hash_lookup
+ON block_headers (block_hash, block_number);
+
 -- Extrinsic indexes
 CREATE INDEX idx_extrinsic_data_block ON extrinsic_data(block_number);
 CREATE INDEX idx_extrinsic_data_hash ON extrinsic_data(block_hash);
@@ -354,15 +364,48 @@ CREATE INDEX idx_event_data_block ON event_data(block_number);
 CREATE INDEX idx_event_data_extrinsic ON event_data(extrinsic_id);
 CREATE INDEX idx_event_data_pallet ON event_data(pallet, event_name);
 
+-- Event Performance Optimization
+CREATE INDEX idx_event_data_extrinsic_lookup
+ON event_data (extrinsic_id, block_number) 
+WHERE extrinsic_id IS NOT NULL;
+
+CREATE INDEX idx_event_data_block_processing
+ON event_data (block_hash, event_index);
+
 -- Account indexes (optimized for UPSERT operations)
 CREATE UNIQUE INDEX idx_account_profiles_id_unique ON account_profiles(account_id);
 CREATE INDEX idx_account_profiles_validator ON account_profiles(is_validator);
 CREATE INDEX idx_account_profiles_activity ON account_profiles(last_activity_block);
 
+-- ================================
+-- PERFORMANCE OPTIMIZATION INDEXES
+-- ================================
+
+-- CRITICAL: Account Profiles UPSERT Optimization
+CREATE INDEX idx_account_profiles_fast_update 
+ON account_profiles (account_id) 
+INCLUDE (current_nonce, last_activity_block, last_activity_timestamp, is_validator, is_nominator);
+
+CREATE INDEX idx_account_profiles_hot 
+ON account_profiles (account_id, current_nonce) 
+WHERE last_activity_timestamp > (now() - interval '1 day');
+
+CREATE INDEX idx_account_profiles_update_columns
+ON account_profiles (current_nonce, last_activity_block, last_activity_timestamp);
+
 -- Balance history indexes (optimized for bulk operations)
 CREATE INDEX idx_balance_history_account ON balance_history(account_id);
 CREATE INDEX idx_balance_history_block ON balance_history(block_number);
 CREATE UNIQUE INDEX idx_balance_history_account_block_unique ON balance_history(account_id, block_hash);
+
+-- Balance History Performance Optimization
+CREATE INDEX idx_balance_history_insert_fast
+ON balance_history (account_id, block_number, indexed_at) 
+INCLUDE (balance_free, balance_reserved, balance_frozen);
+
+CREATE INDEX idx_balance_history_recent
+ON balance_history (account_id, block_number) 
+WHERE indexed_at > (now() - interval '7 days');
 
 -- Transfer indexes
 CREATE INDEX idx_transfer_events_from ON transfer_events(from_account);
