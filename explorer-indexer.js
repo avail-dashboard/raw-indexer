@@ -14,6 +14,7 @@ class AvailExplorerIndexer {
             startBlock: parseInt(process.env.START_BLOCK),
             endBlock: parseInt(process.env.END_BLOCK),
             requestDelay: parseInt(process.env.REQUEST_DELAY),
+            reverseIndexing: process.env.REVERSE_INDEXING === 'true',
             maxRetries: 3,
             resumeOnError: true
         };
@@ -47,6 +48,7 @@ class AvailExplorerIndexer {
         console.log('=====================================');
         console.log(`📊 Block range: ${this.config.startBlock} → ${this.config.endBlock}`);
         console.log(`⏱️ Request delay: ${this.config.requestDelay}ms`);
+        console.log(`🔄 Reverse indexing: ${this.config.reverseIndexing ? 'ENABLED (newest first)' : 'DISABLED (oldest first)'}`);
         console.log('');
 
         this.isRunning = true;
@@ -141,12 +143,20 @@ class AvailExplorerIndexer {
 
     // Process a range of blocks with pipeline processing
     async processBlockRange(startBlock, endBlock) {
-        const totalBlocks = endBlock - startBlock + 1;
-        console.log(`\n🔄 Processing ${totalBlocks} blocks with pipeline processing...`);
+        const totalBlocks = Math.abs(endBlock - startBlock) + 1;
+        const direction = this.config.reverseIndexing ? 'reverse (newest first)' : 'forward (oldest first)';
+        console.log(`\n🔄 Processing ${totalBlocks} blocks with pipeline processing (${direction})...`);
 
         let pendingStorage = null; // Track storage operation for previous block
         
-        for (let blockNum = startBlock; blockNum <= endBlock && !this.shouldStop; blockNum++) {
+        // Support both forward and reverse processing
+        const blockCondition = this.config.reverseIndexing 
+            ? (blockNum) => blockNum >= endBlock && !this.shouldStop
+            : (blockNum) => blockNum <= endBlock && !this.shouldStop;
+        
+        const blockIncrement = this.config.reverseIndexing ? -1 : 1;
+        
+        for (let blockNum = startBlock; blockCondition(blockNum); blockNum += blockIncrement) {
             try {
                 // Step 1: Start extraction for current block (in parallel with previous storage)
                 const extractionPromise = this.extractBlockData(blockNum);
@@ -493,9 +503,12 @@ class AvailExplorerIndexer {
                     sufficients: 0 // Would need to extract from storage
                 }));
                 
-                // Execute batch operations in parallel for entire chunk
-                await Promise.all([
-                    this.database.executeBatch(
+                // Execute batch operations - account profiles with conflict handling
+                const operations = [];
+                
+                // Account profiles with duplicate handling
+                const accountProfilesOperation = async () => {
+                    return await this.database.executeBatch(
                         accountProfilesData,
                         'account_profiles',
                         ['account_id', 'display_name', 'identity_judgement', 'is_validator', 'is_nominator', 'current_nonce', 'first_seen_block', 'first_seen_timestamp', 'last_activity_block', 'last_activity_timestamp'],
@@ -512,9 +525,13 @@ class AvailExplorerIndexer {
                             item.lastActivityTimestamp || null
                         ],
                         chunkSize,
-                        'UPSERT',
+                        'UPSERT', // Use UPSERT to update existing accounts
                         client
-                    ),
+                    );
+                };
+                
+                operations.push(accountProfilesOperation());
+                operations.push(
                     this.database.executeBatch(
                         balanceHistoryData,
                         'balance_history',
@@ -537,7 +554,10 @@ class AvailExplorerIndexer {
                         'INSERT',
                         client
                     )
-                ]);
+                );
+                
+                // Execute all operations in parallel
+                await Promise.all(operations);
             }
         }
 
