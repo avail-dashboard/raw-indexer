@@ -128,13 +128,16 @@ class AvailExplorerExtractor {
                 this.extractRuntimeData(blockHash)
             ]);
 
-            // Parallel extraction of storage, Kate, and account data
-            console.log('  🚀 Extracting storage, Kate, and account data in parallel...');
-            const [storageData, kateData, accountData] = await Promise.all([
+            // Parallel extraction of storage and Kate data, then selective account data
+            console.log('  🚀 Extracting storage and Kate data in parallel...');
+            const [storageData, kateData] = await Promise.all([
                 this.extractStorageState(blockHash, blockNumber),
-                this.extractKateData(blockHash),
-                this.extractAccountData(blockHash)
+                this.extractKateData(blockHash)
             ]);
+            
+            // Extract only involved accounts (requires extrinsics and events data first)
+            console.log('  👥 Extracting involved accounts (selective approach)...');
+            const accountData = await this.extractInvolvedAccountsFromBlock(blockHash, blockData.extrinsics, eventsData);
 
             // Network statistics (can be calculated after we have the data)
             console.log('  📊 Calculating network statistics...');
@@ -259,75 +262,25 @@ class AvailExplorerExtractor {
         const storageData = {};
 
         try {
-            // System storage - with pagination
-            console.log('    📋 System storage...');
+            // System storage - SKIPPING full account extraction (using selective extraction instead)
+            console.log('    📋 System storage (basic metadata only)...');
             
-            const pageSize = parseInt(process.env.ACCOUNT_PAGE_SIZE) || 1000;
-            const batchSize = 5; // Load 5 pages in parallel
+            // Skip loading all accounts since we use selective extraction
             let allAccounts = [];
             let totalPages = 0;
             
-            try {
-                console.log(`      📄 Loading accounts with unlimited pagination...`);
-                let startKey = null;
-                let page = 0;
-                
-                while (true) {
-                    page++;
-                    console.log(`      📄 Loading account page ${page}...`);
-                    
-                    const pageAccounts = await this.scheduleApiCall(() => this.api.query.system.account.entriesPaged({
-                        args: [],
-                        pageSize: pageSize,
-                        startKey: startKey
-                    }, blockHash));
-                    
-                    this.extractionStats.totalApiCalls++;
-                    
-                    if (pageAccounts.length === 0) {
-                        console.log(`      ✅ No more accounts, stopping at page ${page}`);
-                        break;
-                    }
-                    
-                    allAccounts.push(...pageAccounts);
-                    totalPages = page;
-                    
-                    console.log(`      ✅ Page ${page}: +${pageAccounts.length} accounts (Total: ${allAccounts.length})`);
-                    
-                    // Set start key for next page
-                    if (pageAccounts.length === pageSize) {
-                        startKey = pageAccounts[pageAccounts.length - 1][0];
-                    } else {
-                        // Last page (incomplete page)
-                        console.log(`      ✅ Last page reached (${pageAccounts.length} < ${pageSize})`);
-                        break;
-                    }
-                }
-                
-                console.log(`      🎉 Account loading completed: ${allAccounts.length} accounts in ${totalPages} pages`);
-                
-            } catch (e) {
-                console.warn(`⚠️ Account loading failed: ${e.message}, falling back to no accounts`);
-                allAccounts = [];
-            }
+            console.log(`      ⚡ Skipping full account loading (using selective extraction for efficiency)`);
+            console.log(`      🎯 Will extract only involved accounts later in pipeline`);
             
             // Block hash verification
             const storedBlockHash = await this.scheduleApiCall(() => this.api.query.system.blockHash.at(blockHash, blockNumber));
             this.extractionStats.totalApiCalls++;
             
             storageData.system = {
-                accounts: allAccounts.map(([accountId, accountInfo]) => ({
-                    accountId: accountId.toString(),
-                    nonce: this.safeBigIntValue(accountInfo.nonce),
-                    consumers: this.safeBigIntValue(accountInfo.consumers),
-                    providers: this.safeBigIntValue(accountInfo.providers),
-                    sufficients: this.safeBigIntValue(accountInfo.sufficients),
-                    data: this.safeJsonData(accountInfo.data, 'account.data'),
-                    raw: this.safeJsonData(accountInfo, 'account')
-                })),
-                totalAccounts: allAccounts.length,
-                totalPages: totalPages,
-                note: `All ${allAccounts.length} accounts included`,
+                accounts: [], // No accounts in storage data - using selective extraction
+                totalAccounts: 0,
+                totalPages: 0,
+                note: `Account extraction skipped - using selective extraction for efficiency`,
                 blockHashVerification: storedBlockHash.toString() === blockHash.toString()
             };
 
@@ -748,6 +701,209 @@ class AvailExplorerExtractor {
             console.error(`❌ Metadata extraction failed: ${error.message}`);
             throw error;
         }
+    }
+
+    // Extract only accounts involved in block activities (selective approach)
+    async extractInvolvedAccountsFromBlock(blockHash, extrinsics = [], events = []) {
+        try {
+            console.log(`      👥 Extracting involved accounts (selective approach)...`);
+            
+            const involvedAccountIds = new Set();
+            
+            // 1. Extract accounts from extrinsics (signers and method arguments)
+            console.log(`      🔍 Scanning ${extrinsics.length} extrinsics for account involvement...`);
+            for (const extrinsic of extrinsics) {
+                // Add signer account
+                if (extrinsic.signature && extrinsic.signature.signer) {
+                    involvedAccountIds.add(extrinsic.signature.signer.toString());
+                }
+                
+                // Extract accounts from method arguments
+                if (extrinsic.method && extrinsic.method.args) {
+                    this.extractAccountsFromMethodArgs(extrinsic.method.args, involvedAccountIds);
+                }
+            }
+            
+            // 2. Extract accounts from events
+            console.log(`      🔍 Scanning ${events.length} events for account involvement...`);
+            for (const event of events) {
+                this.extractAccountsFromEvent(event, involvedAccountIds);
+            }
+            
+            console.log(`      ✅ Found ${involvedAccountIds.size} involved accounts (vs 100K+ in full extraction)`);
+            
+            // 3. Fetch balance data for only the involved accounts
+            const accountsArray = Array.from(involvedAccountIds);
+            const accountData = {
+                summary: {
+                    totalAccounts: accountsArray.length,
+                    activeAccounts: 0,
+                    validatorAccounts: 0
+                },
+                accounts: [],
+                balanceDistribution: {
+                    ranges: [],
+                    totalSupply: BigInt(0)
+                }
+            };
+            
+            console.log(`      💰 Fetching balance data for ${accountsArray.length} involved accounts...`);
+            
+            // Batch process involved accounts (much smaller set)
+            const batchSize = 100;
+            for (let i = 0; i < accountsArray.length; i += batchSize) {
+                const batch = accountsArray.slice(i, i + batchSize);
+                
+                // Use queryMulti for efficient batch fetching
+                const accountKeys = batch.map(accountId => [this.api.query.system.account, accountId]);
+                const accountInfos = await this.api.queryMulti(accountKeys, blockHash);
+                this.extractionStats.totalApiCalls++;
+                
+                // Process batch results
+                for (let j = 0; j < batch.length; j++) {
+                    const accountId = batch[j];
+                    const accountInfo = accountInfos[j];
+                    
+                    const account = {
+                        accountId: accountId,
+                        nonce: this.safeBigIntValue(accountInfo.nonce),
+                        balance: {
+                            free: this.safeBigIntValue(accountInfo.data.free),
+                            reserved: this.safeBigIntValue(accountInfo.data.reserved),
+                            frozen: accountInfo.data.frozen ? this.safeBigIntValue(accountInfo.data.frozen) : BigInt(0)
+                        },
+                        consumers: this.safeBigIntValue(accountInfo.consumers),
+                        providers: this.safeBigIntValue(accountInfo.providers),
+                        isActive: this.safeBigIntValue(accountInfo.nonce) > 0
+                    };
+
+                    if (account.isActive) {
+                        accountData.summary.activeAccounts++;
+                    }
+
+                    accountData.accounts.push(account);
+                }
+            }
+            
+            console.log(`      ✅ Processed ${accountData.accounts.length} involved accounts (selective approach)`);
+            return accountData;
+            
+        } catch (error) {
+            console.error(`❌ Involved account extraction failed: ${error.message}`);
+            throw error;
+        }
+    }
+    
+    // Extract account IDs from method arguments recursively
+    extractAccountsFromMethodArgs(args, accountSet, depth = 0) {
+        if (!args || depth > 5) return; // Prevent infinite recursion
+        
+        if (Array.isArray(args)) {
+            for (const arg of args) {
+                this.extractAccountsFromMethodArgs(arg, accountSet, depth + 1);
+            }
+        } else if (typeof args === 'object' && args !== null) {
+            try {
+                // Check if this looks like an account ID (common patterns)
+                const argString = args.toString();
+                if (this.looksLikeAccountId(argString)) {
+                    accountSet.add(argString);
+                    return; // Found account, no need to recurse further
+                }
+                
+                // Only recurse if it's a plain object, not a complex polkadot type
+                if (Object.getPrototypeOf(args) === Object.prototype) {
+                    // Recursively check object properties
+                    for (const value of Object.values(args)) {
+                        this.extractAccountsFromMethodArgs(value, accountSet, depth + 1);
+                    }
+                }
+            } catch (e) {
+                // Skip complex objects that can't be stringified
+            }
+        } else if (typeof args === 'string') {
+            if (this.looksLikeAccountId(args)) {
+                accountSet.add(args);
+            }
+        }
+    }
+    
+    // Extract account IDs from event data
+    extractAccountsFromEvent(event, accountSet) {
+        if (!event.data) return;
+        
+        // Specific event patterns for account extraction
+        switch (event.pallet) {
+            case 'balances':
+                if (['Transfer', 'Deposit', 'Withdraw', 'Reserved', 'Unreserved'].includes(event.eventName)) {
+                    // Transfer: [from, to, amount] or [account, amount]
+                    if (event.data[0] && this.looksLikeAccountId(event.data[0].toString())) {
+                        accountSet.add(event.data[0].toString());
+                    }
+                    if (event.data[1] && this.looksLikeAccountId(event.data[1].toString())) {
+                        accountSet.add(event.data[1].toString());
+                    }
+                }
+                break;
+                
+            case 'staking':
+                // Staking events usually have validator/nominator as first arg
+                if (event.data[0] && this.looksLikeAccountId(event.data[0].toString())) {
+                    accountSet.add(event.data[0].toString());
+                }
+                // Some staking events have second account
+                if (event.data[1] && this.looksLikeAccountId(event.data[1].toString())) {
+                    accountSet.add(event.data[1].toString());
+                }
+                break;
+                
+            case 'dataAvailability':
+                // DA events usually have submitter account
+                if (event.data[0] && this.looksLikeAccountId(event.data[0].toString())) {
+                    accountSet.add(event.data[0].toString());
+                }
+                break;
+                
+            case 'system':
+                if (event.eventName === 'NewAccount' && event.data[0]) {
+                    accountSet.add(event.data[0].toString());
+                }
+                break;
+                
+            default:
+                // Generic extraction for any event data that looks like account IDs
+                if (Array.isArray(event.data)) {
+                    for (const dataItem of event.data) {
+                        if (dataItem && this.looksLikeAccountId(dataItem.toString())) {
+                            accountSet.add(dataItem.toString());
+                        }
+                    }
+                }
+                break;
+        }
+    }
+    
+    // Heuristic to identify potential account IDs
+    looksLikeAccountId(value) {
+        if (!value || typeof value !== 'string') return false;
+        
+        // Substrate account IDs are typically:
+        // - 32 bytes (64 hex chars) or 
+        // - SS58 encoded addresses (varies by network)
+        // - Start with specific patterns
+        
+        // Hex format (0x + 64 chars)
+        if (/^0x[a-fA-F0-9]{64}$/.test(value)) return true;
+        
+        // SS58 format (base58 encoded, typical lengths)
+        if (/^[1-9A-HJ-NP-Za-km-z]{47,48}$/.test(value)) return true;
+        
+        // Avail-specific patterns (adjust based on network)
+        if (value.length >= 47 && value.length <= 50 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(value)) {
+            return true;
+        }
+        
+        return false;
     }
 
     // Get processing statistics

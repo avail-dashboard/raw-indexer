@@ -1,6 +1,7 @@
 -- Comprehensive Avail DA Explorer Database Schema
 -- Covers all explorer functionality excluding logs storage and raw blob content storage
 -- Handles BigInt values with NUMERIC(39,0) to prevent data loss
+-- Includes optimized indexes for high-performance reindexing and bulk operations
 
 -- Drop existing tables if they exist (for development)
 DROP TABLE IF EXISTS transfer_events CASCADE;
@@ -335,9 +336,9 @@ CREATE TABLE staking_events (
 -- INDEXES FOR PERFORMANCE
 -- ================================
 
--- Block and hash indexes
-CREATE INDEX idx_block_headers_number ON block_headers(block_number);
-CREATE INDEX idx_block_headers_hash ON block_headers(block_hash);
+-- Block and hash indexes (optimized for reindexing)
+CREATE INDEX idx_block_headers_number_desc ON block_headers(block_number DESC);
+CREATE UNIQUE INDEX idx_block_headers_hash_unique ON block_headers(block_hash);
 CREATE INDEX idx_block_headers_timestamp ON block_headers(timestamp_utc);
 CREATE INDEX idx_block_headers_author ON block_headers(author_account);
 
@@ -353,15 +354,15 @@ CREATE INDEX idx_event_data_block ON event_data(block_number);
 CREATE INDEX idx_event_data_extrinsic ON event_data(extrinsic_id);
 CREATE INDEX idx_event_data_pallet ON event_data(pallet, event_name);
 
--- Account indexes
-CREATE INDEX idx_account_profiles_id ON account_profiles(account_id);
+-- Account indexes (optimized for UPSERT operations)
+CREATE UNIQUE INDEX idx_account_profiles_id_unique ON account_profiles(account_id);
 CREATE INDEX idx_account_profiles_validator ON account_profiles(is_validator);
 CREATE INDEX idx_account_profiles_activity ON account_profiles(last_activity_block);
 
--- Balance history indexes
+-- Balance history indexes (optimized for bulk operations)
 CREATE INDEX idx_balance_history_account ON balance_history(account_id);
 CREATE INDEX idx_balance_history_block ON balance_history(block_number);
-CREATE INDEX idx_balance_history_account_block ON balance_history(account_id, block_number);
+CREATE UNIQUE INDEX idx_balance_history_account_block_unique ON balance_history(account_id, block_hash);
 
 -- Transfer indexes
 CREATE INDEX idx_transfer_events_from ON transfer_events(from_account);
