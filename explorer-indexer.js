@@ -110,6 +110,24 @@ class AvailExplorerIndexer {
             // If START_BLOCK is explicitly defined, use it instead of resume logic
             if (!isNaN(this.config.startBlock)) {
                 console.log(`🎯 Using explicit START_BLOCK: ${this.config.startBlock}`);
+                
+                // REVERSE INDEXING OPTIMIZATION: Jump over large gaps of existing blocks
+                if (this.config.reverseIndexing) {
+                    console.log(`🔄 Reverse indexing enabled - optimizing start point...`);
+                    const optimalStart = await this.database.findOptimalReverseStart(
+                        this.config.startBlock, 
+                        this.config.endBlock
+                    );
+                    
+                    if (optimalStart !== null) {
+                        console.log(`⚡ Optimization: Jumping from ${this.config.startBlock} to ${optimalStart} (skipped ${this.config.startBlock - optimalStart} existing blocks)`);
+                        return optimalStart;
+                    } else {
+                        console.log(`✅ All blocks in reverse range ${this.config.startBlock}-${this.config.endBlock} already processed`);
+                        return this.config.endBlock - 1; // Will cause immediate completion
+                    }
+                }
+                
                 return this.config.startBlock;
             }
             

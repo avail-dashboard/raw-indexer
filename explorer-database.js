@@ -748,6 +748,31 @@ class ExplorerDatabase {
         return result.rows.length > 0;
     }
 
+    async findOptimalReverseStart(startBlock, endBlock) {
+        // Adapted from get_counts.sql missing block range algorithm
+        // Find the highest missing block in the range for optimal reverse indexing start point
+        const query = `
+            WITH missing AS (
+                SELECT generate_series($2::int, $1::int, 1) AS potential_block
+                EXCEPT
+                SELECT block_number::int 
+                FROM block_headers 
+                WHERE block_number BETWEEN $2 AND $1
+            )
+            SELECT MAX(potential_block) as optimal_start
+            FROM missing
+            WHERE potential_block <= $1
+        `;
+        
+        const result = await this.query(query, [
+            this.prepareBigIntValue(startBlock),
+            this.prepareBigIntValue(endBlock)
+        ]);
+        
+        const optimalStart = result.rows[0].optimal_start;
+        return optimalStart ? parseInt(optimalStart) : null;
+    }
+
     async getProcessingStatistics() {
         const queries = {
             totalBlocks: 'SELECT COUNT(*) as count FROM block_headers',
