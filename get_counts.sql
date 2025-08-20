@@ -6,49 +6,50 @@
 -- \set block_number 626
 -- \i get_counts.sql
 
--- Query to get the count of all the records in each table
-SELECT 'transfer_events' AS table_name, COUNT(*) AS record_count FROM transfer_events
-UNION ALL
-SELECT 'staking_events' AS table_name, COUNT(*) AS record_count FROM staking_events
-UNION ALL
-SELECT 'data_submissions' AS table_name, COUNT(*) AS record_count FROM data_submissions
-UNION ALL
-SELECT 'balance_history' AS table_name, COUNT(*) AS record_count FROM balance_history
-UNION ALL
-SELECT 'account_profiles' AS table_name, COUNT(*) AS record_count FROM account_profiles
-UNION ALL
-SELECT 'event_data' AS table_name, COUNT(*) AS record_count FROM event_data
+-- Query to get the count of all the records in each table (ordered by typical query frequency)
+SELECT 'block_headers' AS table_name, COUNT(*) AS record_count FROM block_headers
 UNION ALL
 SELECT 'extrinsic_data' AS table_name, COUNT(*) AS record_count FROM extrinsic_data
 UNION ALL
-SELECT 'app_registrations' AS table_name, COUNT(*) AS record_count FROM app_registrations
+SELECT 'event_data' AS table_name, COUNT(*) AS record_count FROM event_data
+UNION ALL
+SELECT 'account_profiles' AS table_name, COUNT(*) AS record_count FROM account_profiles
+UNION ALL
+SELECT 'balance_history' AS table_name, COUNT(*) AS record_count FROM balance_history
+UNION ALL
+SELECT 'transfer_events' AS table_name, COUNT(*) AS record_count FROM transfer_events
+UNION ALL
+SELECT 'data_submissions' AS table_name, COUNT(*) AS record_count FROM data_submissions
 UNION ALL
 SELECT 'kate_commitments' AS table_name, COUNT(*) AS record_count FROM kate_commitments
 UNION ALL
-SELECT 'block_headers' AS table_name, COUNT(*) AS record_count FROM block_headers
+SELECT 'app_registrations' AS table_name, COUNT(*) AS record_count FROM app_registrations
+UNION ALL
+SELECT 'staking_events' AS table_name, COUNT(*) AS record_count FROM staking_events
 UNION ALL
 SELECT 'schema_migrations' AS table_name, COUNT(*) AS record_count FROM schema_migrations;
 
 -- Query to get the count of records for a specific block number
 -- Usage: psql -v block_number=93712 -f get_counts.sql
--- The :block_number syntax works with psql -v, but for compatibility, we'll also provide a version that works directly
-SELECT 'transfer_events_in_block' AS table_name, COUNT(*) AS record_count FROM transfer_events WHERE block_number = :'block_number'
-UNION ALL
-SELECT 'staking_events_in_block' AS table_name, COUNT(*) AS record_count FROM staking_events WHERE block_number = :'block_number'
-UNION ALL
-SELECT 'data_submissions_in_block' AS table_name, COUNT(*) AS record_count FROM data_submissions WHERE block_number = :'block_number'
-UNION ALL
-SELECT 'balance_history_in_block' AS table_name, COUNT(*) AS record_count FROM balance_history WHERE block_number = :'block_number'
-UNION ALL
+/*
 SELECT 'extrinsic_data_in_block' AS table_name, COUNT(*) AS record_count FROM extrinsic_data WHERE block_number = :'block_number'
 UNION ALL
 SELECT 'event_data_in_block' AS table_name, COUNT(*) AS record_count FROM event_data WHERE block_number = :'block_number'
 UNION ALL
+SELECT 'balance_history_in_block' AS table_name, COUNT(*) AS record_count FROM balance_history WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'transfer_events_in_block' AS table_name, COUNT(*) AS record_count FROM transfer_events WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'data_submissions_in_block' AS table_name, COUNT(*) AS record_count FROM data_submissions WHERE block_number = :'block_number'
+UNION ALL
 SELECT 'kate_commitments_in_block' AS table_name, COUNT(*) AS record_count FROM kate_commitments WHERE block_number = :'block_number'
+UNION ALL
+SELECT 'staking_events_in_block' AS table_name, COUNT(*) AS record_count FROM staking_events WHERE block_number = :'block_number'
 UNION ALL
 SELECT 'accounts_active_in_block' AS table_name, COUNT(*) AS record_count from account_profiles where first_seen_block <= :'block_number' AND last_activity_block >= :'block_number'
 UNION ALL
 SELECT 'app_registrations_active_in_block' AS table_name, COUNT(*) AS record_count from app_registrations where registered_at_block <= :'block_number';
+*/
 
 -- Query to find empty columns in each table
 WITH all_empty_columns AS (

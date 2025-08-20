@@ -62,7 +62,7 @@ CREATE TABLE block_headers (
 -- Kate Polynomial Commitments (Avail DA specific)
 CREATE TABLE kate_commitments (
     id SERIAL PRIMARY KEY,
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
+    block_hash VARCHAR(66) NOT NULL,
     block_number NUMERIC(39,0) NOT NULL,
     
     -- Kate commitment data
@@ -115,7 +115,7 @@ CREATE TABLE app_registrations (
 -- Comprehensive Extrinsic Data
 CREATE TABLE extrinsic_data (
     id SERIAL PRIMARY KEY,
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
+    block_hash VARCHAR(66) NOT NULL,
     block_number NUMERIC(39,0) NOT NULL,
     extrinsic_index INTEGER NOT NULL,
     extrinsic_hash VARCHAR(66) NOT NULL,
@@ -152,12 +152,12 @@ CREATE TABLE extrinsic_data (
 -- Events within extrinsics and blocks
 CREATE TABLE event_data (
     id SERIAL PRIMARY KEY,
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
+    block_hash VARCHAR(66) NOT NULL,
     block_number NUMERIC(39,0) NOT NULL,
     event_index INTEGER NOT NULL,
     
     -- Event location
-    extrinsic_id INTEGER REFERENCES extrinsic_data(id),
+    extrinsic_id INTEGER,
     extrinsic_index INTEGER,
     phase_type VARCHAR(20), -- 'ApplyExtrinsic', 'Finalization', 'Initialization'
     phase_value INTEGER,
@@ -219,8 +219,8 @@ CREATE TABLE account_profiles (
 -- Balance History (snapshots per block)
 CREATE TABLE balance_history (
     id SERIAL PRIMARY KEY,
-    account_id VARCHAR(256) NOT NULL REFERENCES account_profiles(account_id),
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
+    account_id VARCHAR(256) NOT NULL,
+    block_hash VARCHAR(66) NOT NULL,
     block_number NUMERIC(39,0) NOT NULL,
     
     -- Balance snapshot
@@ -251,9 +251,9 @@ CREATE TABLE balance_history (
 -- Data Submissions (Avail DA specific)
 CREATE TABLE data_submissions (
     id SERIAL PRIMARY KEY,
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
+    block_hash VARCHAR(66) NOT NULL,
     block_number NUMERIC(39,0) NOT NULL,
-    extrinsic_id INTEGER REFERENCES extrinsic_data(id),
+    extrinsic_id INTEGER,
     
     -- Submission details
     app_id NUMERIC(39,0) NOT NULL,
@@ -275,10 +275,10 @@ CREATE TABLE data_submissions (
 -- AVAIL Transfer Events
 CREATE TABLE transfer_events (
     id SERIAL PRIMARY KEY,
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
+    block_hash VARCHAR(66) NOT NULL,
     block_number NUMERIC(39,0) NOT NULL,
-    extrinsic_id INTEGER REFERENCES extrinsic_data(id),
-    event_id INTEGER REFERENCES event_data(id),
+    extrinsic_id INTEGER,
+    event_id INTEGER,
     
     -- Transfer details
     from_account VARCHAR(256) NOT NULL,
@@ -304,9 +304,9 @@ CREATE TABLE transfer_events (
 -- Staking Events and Data
 CREATE TABLE staking_events (
     id SERIAL PRIMARY KEY,
-    block_hash VARCHAR(66) NOT NULL REFERENCES block_headers(block_hash),
+    block_hash VARCHAR(66) NOT NULL,
     block_number NUMERIC(39,0) NOT NULL,
-    event_id INTEGER REFERENCES event_data(id),
+    event_id INTEGER,
     
     -- Staking event details
     event_type VARCHAR(30) NOT NULL, -- Bonded, Unbonded, Rewarded, Slashed, etc.
