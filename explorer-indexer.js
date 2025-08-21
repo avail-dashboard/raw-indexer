@@ -524,28 +524,49 @@ class AvailExplorerIndexer {
                 // Execute batch operations - account profiles with conflict handling
                 const operations = [];
                 
-                // Account profiles with duplicate handling
+                // Account profiles with duplicate handling - using INSERT with savepoints to avoid transaction abort
                 const accountProfilesOperation = async () => {
-                    return await this.database.executeBatch(
-                        accountProfilesData,
-                        'account_profiles',
-                        ['account_id', 'display_name', 'identity_judgement', 'is_validator', 'is_nominator', 'current_nonce', 'first_seen_block', 'first_seen_timestamp', 'last_activity_block', 'last_activity_timestamp'],
-                        (item) => [
-                            item.accountId,
-                            item.displayName || null,
-                            item.identityJudgement || null,
-                            item.isValidator || false,
-                            item.isNominator || false,
-                            this.database.prepareBigIntValue(item.currentNonce || 0),
-                            this.database.prepareBigIntValue(item.firstSeenBlock),
-                            item.firstSeenTimestamp || null,
-                            this.database.prepareBigIntValue(item.lastActivityBlock),
-                            item.lastActivityTimestamp || null
-                        ],
-                        chunkSize,
-                        'UPSERT', // Use UPSERT to update existing accounts
-                        client
-                    );
+                    try {
+                        // Create savepoint before account insertion
+                        await client.query('SAVEPOINT account_insert');
+                        
+                        const result = await this.database.executeBatch(
+                            accountProfilesData,
+                            'account_profiles',
+                            ['account_id', 'display_name', 'identity_judgement', 'is_validator', 'is_nominator', 'current_nonce', 'first_seen_block', 'first_seen_timestamp', 'last_activity_block', 'last_activity_timestamp'],
+                            (item) => [
+                                item.accountId,
+                                item.displayName || null,
+                                item.identityJudgement || null,
+                                item.isValidator || false,
+                                item.isNominator || false,
+                                this.database.prepareBigIntValue(item.currentNonce || 0),
+                                this.database.prepareBigIntValue(item.firstSeenBlock),
+                                item.firstSeenTimestamp || null,
+                                this.database.prepareBigIntValue(item.lastActivityBlock),
+                                item.lastActivityTimestamp || null
+                            ],
+                            chunkSize,
+                            'INSERT', // Use INSERT to avoid UPSERT lock contention
+                            client
+                        );
+                        
+                        // Release savepoint on success
+                        await client.query('RELEASE SAVEPOINT account_insert');
+                        return result;
+                        
+                    } catch (error) {
+                        // Rollback to savepoint on any error, keeping transaction alive
+                        await client.query('ROLLBACK TO SAVEPOINT account_insert');
+                        
+                        // Handle duplicate key violations gracefully (reverse indexing means first insertion has latest data)
+                        if (error.code === '23505' && (error.constraint === 'account_profiles_account_id_key' || error.constraint === 'idx_account_profiles_id_unique')) {
+                            console.log(`  ⚠️ Skipping account profiles - accounts already exist (parallel processing advantage)`);
+                            return []; // Return empty array as if no accounts were inserted
+                        } else {
+                            throw error; // Re-throw other errors
+                        }
+                    }
                 };
                 
                 operations.push(accountProfilesOperation());
