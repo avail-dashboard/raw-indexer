@@ -55,7 +55,6 @@ CREATE TABLE block_headers (
     header_raw_hex TEXT,
     
     -- Indexing metadata
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     extraction_version VARCHAR(10) DEFAULT '2.0.0'
 );
 
@@ -77,9 +76,7 @@ CREATE TABLE kate_commitments (
     
     -- DA metrics
     utilization_percentage DECIMAL(5,2),
-    app_data_count INTEGER DEFAULT 0,
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    app_data_count INTEGER DEFAULT 0
 );
 
 -- Application Registrations (DA App-Space tracking)
@@ -102,10 +99,7 @@ CREATE TABLE app_registrations (
     total_submissions INTEGER DEFAULT 0,
     total_data_size NUMERIC(39,0) DEFAULT 0,
     last_submission_block NUMERIC(39,0),
-    last_submission_timestamp TIMESTAMP,
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_submission_timestamp TIMESTAMP
 );
 
 -- ================================
@@ -143,9 +137,6 @@ CREATE TABLE extrinsic_data (
     raw_hex TEXT,
     length_bytes INTEGER,
     
-    -- Indexing metadata
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
     UNIQUE(block_hash, extrinsic_index)
 );
 
@@ -170,9 +161,6 @@ CREATE TABLE event_data (
     
     -- Event raw data
     raw_data JSONB,
-    
-    -- Indexing metadata
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     UNIQUE(block_hash, event_index)
 );
@@ -209,11 +197,7 @@ CREATE TABLE account_profiles (
     first_seen_block NUMERIC(39,0),
     first_seen_timestamp TIMESTAMP,
     last_activity_block NUMERIC(39,0),
-    last_activity_timestamp TIMESTAMP,
-    
-    -- Indexing metadata
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_activity_timestamp TIMESTAMP
 );
 
 -- Balance History (snapshots per block)
@@ -237,9 +221,6 @@ CREATE TABLE balance_history (
     -- Change tracking
     free_change NUMERIC(39,0) DEFAULT 0,
     reserved_change NUMERIC(39,0) DEFAULT 0,
-    
-    -- Indexing metadata
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     UNIQUE(account_id, block_hash)
 );
@@ -266,10 +247,7 @@ CREATE TABLE data_submissions (
     proof_data JSONB,
     
     -- Fee information
-    submission_fee NUMERIC(39,0) DEFAULT 0,
-    
-    -- Indexing metadata
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    submission_fee NUMERIC(39,0) DEFAULT 0
 );
 
 -- AVAIL Transfer Events
@@ -291,10 +269,7 @@ CREATE TABLE transfer_events (
     
     -- Fee information
     fee_paid NUMERIC(39,0) DEFAULT 0,
-    tip_paid NUMERIC(39,0) DEFAULT 0,
-    
-    -- Indexing metadata
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    tip_paid NUMERIC(39,0) DEFAULT 0
 );
 
 -- ================================
@@ -320,10 +295,7 @@ CREATE TABLE staking_events (
     era_index NUMERIC(39,0),
     
     -- Additional data
-    event_data JSONB,
-    
-    -- Indexing metadata
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    event_data JSONB
 );
 
 -- ================================
@@ -343,12 +315,6 @@ CREATE INDEX idx_block_headers_timestamp ON block_headers(timestamp_utc);
 CREATE INDEX idx_block_headers_author ON block_headers(author_account);
 
 -- Block Processing Performance Optimization
-CREATE INDEX idx_block_headers_processing 
-ON block_headers (block_number, indexed_at);
-
-CREATE INDEX idx_block_headers_latest 
-ON block_headers (indexed_at DESC, block_number DESC);
-
 CREATE INDEX idx_block_headers_hash_lookup
 ON block_headers (block_hash, block_number);
 
@@ -400,12 +366,8 @@ CREATE UNIQUE INDEX idx_balance_history_account_block_unique ON balance_history(
 
 -- Balance History Performance Optimization
 CREATE INDEX idx_balance_history_insert_fast
-ON balance_history (account_id, block_number, indexed_at) 
-INCLUDE (balance_free, balance_reserved, balance_frozen);
-
-CREATE INDEX idx_balance_history_recent
 ON balance_history (account_id, block_number) 
-WHERE indexed_at > (now() - interval '7 days');
+INCLUDE (balance_free, balance_reserved, balance_frozen);
 
 -- Transfer indexes
 CREATE INDEX idx_transfer_events_from ON transfer_events(from_account);
