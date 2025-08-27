@@ -314,6 +314,10 @@ CREATE UNIQUE INDEX idx_block_headers_hash_unique ON block_headers(block_hash);
 CREATE INDEX idx_block_headers_timestamp ON block_headers(timestamp_utc);
 CREATE INDEX idx_block_headers_author ON block_headers(author_account);
 
+-- Time-based query optimization
+CREATE INDEX idx_block_headers_timestamp_number ON block_headers(timestamp_utc, block_number);
+-- Dynamic date indexes should be created manually with specific dates as needed
+
 -- Block Processing Performance Optimization
 CREATE INDEX idx_block_headers_hash_lookup
 ON block_headers (block_hash, block_number);
@@ -324,6 +328,15 @@ CREATE INDEX idx_extrinsic_data_hash ON extrinsic_data(block_hash);
 CREATE INDEX idx_extrinsic_data_signer ON extrinsic_data(signer_account);
 CREATE INDEX idx_extrinsic_data_method ON extrinsic_data(method_pallet, method_name);
 CREATE INDEX idx_extrinsic_data_success ON extrinsic_data(success);
+
+-- Composite indexes for common query patterns
+CREATE INDEX idx_extrinsic_data_block_index ON extrinsic_data(block_number, extrinsic_index);
+CREATE INDEX idx_extrinsic_data_signer_block ON extrinsic_data(signer_account, block_number) WHERE signer_account IS NOT NULL;
+
+-- Partial indexes for common filters
+CREATE INDEX idx_extrinsic_data_successful ON extrinsic_data(block_number, method_pallet) WHERE success = true;
+CREATE INDEX idx_extrinsic_data_failed ON extrinsic_data(block_number, error_message) WHERE success = false;
+CREATE INDEX idx_extrinsic_data_signed ON extrinsic_data(signer_account, block_number) WHERE is_signed = true;
 
 -- Event indexes
 CREATE INDEX idx_event_data_block ON event_data(block_number);
@@ -337,6 +350,10 @@ WHERE extrinsic_id IS NOT NULL;
 
 CREATE INDEX idx_event_data_block_processing
 ON event_data (block_hash, event_index);
+
+-- Composite indexes for event lookups
+CREATE INDEX idx_event_data_block_index ON event_data(block_number, event_index);
+CREATE INDEX idx_event_data_pallet_block ON event_data(pallet, block_number);
 
 -- Account indexes (optimized for UPSERT operations)
 CREATE UNIQUE INDEX idx_account_profiles_id_unique ON account_profiles(account_id);
@@ -352,12 +369,16 @@ CREATE INDEX idx_account_profiles_fast_update
 ON account_profiles (account_id) 
 INCLUDE (current_nonce, last_activity_block, last_activity_timestamp, is_validator, is_nominator);
 
-CREATE INDEX idx_account_profiles_hot 
-ON account_profiles (account_id, current_nonce) 
-WHERE last_activity_timestamp > (now() - interval '1 day');
+-- Dynamic date index should be created manually with specific date as needed
 
 CREATE INDEX idx_account_profiles_update_columns
 ON account_profiles (current_nonce, last_activity_block, last_activity_timestamp);
+
+-- Account activity partial indexes
+-- Dynamic date indexes should be created manually with specific dates as needed
+
+CREATE INDEX idx_account_profiles_high_activity ON account_profiles(total_extrinsics_sent DESC, account_id) 
+WHERE total_extrinsics_sent > 100;
 
 -- Balance history indexes (optimized for bulk operations)
 CREATE INDEX idx_balance_history_account ON balance_history(account_id);
@@ -375,10 +396,19 @@ CREATE INDEX idx_transfer_events_to ON transfer_events(to_account);
 CREATE INDEX idx_transfer_events_block ON transfer_events(block_number);
 CREATE INDEX idx_transfer_events_amount ON transfer_events(amount);
 
+-- Transfer relationship indexes
+CREATE INDEX idx_transfer_events_from_block ON transfer_events(from_account, block_number);
+CREATE INDEX idx_transfer_events_to_block ON transfer_events(to_account, block_number);
+CREATE INDEX idx_transfer_events_amount_block ON transfer_events(amount DESC, block_number) WHERE amount > 0;
+
 -- Data submission indexes
 CREATE INDEX idx_data_submissions_app ON data_submissions(app_id);
 CREATE INDEX idx_data_submissions_submitter ON data_submissions(submitter_account);
 CREATE INDEX idx_data_submissions_block ON data_submissions(block_number);
+
+-- Cross-table relationship indexes
+CREATE INDEX idx_data_submissions_app_block ON data_submissions(app_id, block_number);
+CREATE INDEX idx_data_submissions_submitter_app ON data_submissions(submitter_account, app_id);
 
 -- Analytics indexes removed
 

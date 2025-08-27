@@ -75,7 +75,6 @@ WITH all_empty_columns AS (
     SELECT 'block_headers' AS table_name, 'transaction_version' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE transaction_version IS NOT NULL) UNION ALL
     SELECT 'block_headers' AS table_name, 'state_version' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE state_version IS NOT NULL) UNION ALL
     SELECT 'block_headers' AS table_name, 'header_raw_hex' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE header_raw_hex IS NOT NULL) UNION ALL
-    SELECT 'block_headers' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE indexed_at IS NOT NULL) UNION ALL
     SELECT 'block_headers' AS table_name, 'extraction_version' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM block_headers WHERE extraction_version IS NOT NULL) UNION ALL
     -- kate_commitments
     SELECT 'kate_commitments' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM kate_commitments WHERE id IS NOT NULL) UNION ALL
@@ -89,7 +88,6 @@ WITH all_empty_columns AS (
     SELECT 'kate_commitments' AS table_name, 'proof_data' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM kate_commitments WHERE proof_data IS NOT NULL) UNION ALL
     SELECT 'kate_commitments' AS table_name, 'utilization_percentage' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM kate_commitments WHERE utilization_percentage IS NOT NULL) UNION ALL
     SELECT 'kate_commitments' AS table_name, 'app_data_count' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM kate_commitments WHERE app_data_count IS NOT NULL) UNION ALL
-    SELECT 'kate_commitments' AS table_name, 'created_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM kate_commitments WHERE created_at IS NOT NULL) UNION ALL
     -- app_registrations
     SELECT 'app_registrations' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM app_registrations WHERE id IS NOT NULL) UNION ALL
     SELECT 'app_registrations' AS table_name, 'app_id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM app_registrations WHERE app_id IS NOT NULL) UNION ALL
@@ -104,8 +102,6 @@ WITH all_empty_columns AS (
     SELECT 'app_registrations' AS table_name, 'total_data_size' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM app_registrations WHERE total_data_size IS NOT NULL) UNION ALL
     SELECT 'app_registrations' AS table_name, 'last_submission_block' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM app_registrations WHERE last_submission_block IS NOT NULL) UNION ALL
     SELECT 'app_registrations' AS table_name, 'last_submission_timestamp' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM app_registrations WHERE last_submission_timestamp IS NOT NULL) UNION ALL
-    SELECT 'app_registrations' AS table_name, 'created_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM app_registrations WHERE created_at IS NOT NULL) UNION ALL
-    SELECT 'app_registrations' AS table_name, 'updated_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM app_registrations WHERE updated_at IS NOT NULL) UNION ALL
     -- extrinsic_data
     SELECT 'extrinsic_data' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE id IS NOT NULL) UNION ALL
     SELECT 'extrinsic_data' AS table_name, 'block_hash' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE block_hash IS NOT NULL) UNION ALL
@@ -124,7 +120,6 @@ WITH all_empty_columns AS (
     SELECT 'extrinsic_data' AS table_name, 'method_args' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE method_args IS NOT NULL) UNION ALL
     SELECT 'extrinsic_data' AS table_name, 'raw_hex' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE raw_hex IS NOT NULL) UNION ALL
     SELECT 'extrinsic_data' AS table_name, 'length_bytes' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE length_bytes IS NOT NULL) UNION ALL
-    SELECT 'extrinsic_data' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM extrinsic_data WHERE indexed_at IS NOT NULL) UNION ALL
     -- event_data
     SELECT 'event_data' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE id IS NOT NULL) UNION ALL
     SELECT 'event_data' AS table_name, 'block_hash' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE block_hash IS NOT NULL) UNION ALL
@@ -138,7 +133,6 @@ WITH all_empty_columns AS (
     SELECT 'event_data' AS table_name, 'event_name' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE event_name IS NOT NULL) UNION ALL
     SELECT 'event_data' AS table_name, 'topics' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE topics IS NOT NULL) UNION ALL
     SELECT 'event_data' AS table_name, 'raw_data' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE raw_data IS NOT NULL) UNION ALL
-    SELECT 'event_data' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM event_data WHERE indexed_at IS NOT NULL) UNION ALL
     -- account_profiles
     SELECT 'account_profiles' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE id IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'account_id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE account_id IS NOT NULL) UNION ALL
@@ -157,8 +151,6 @@ WITH all_empty_columns AS (
     SELECT 'account_profiles' AS table_name, 'first_seen_timestamp' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE first_seen_timestamp IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'last_activity_block' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE last_activity_block IS NOT NULL) UNION ALL
     SELECT 'account_profiles' AS table_name, 'last_activity_timestamp' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE last_activity_timestamp IS NOT NULL) UNION ALL
-    SELECT 'account_profiles' AS table_name, 'created_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE created_at IS NOT NULL) UNION ALL
-    SELECT 'account_profiles' AS table_name, 'updated_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM account_profiles WHERE updated_at IS NOT NULL) UNION ALL
     -- balance_history
     SELECT 'balance_history' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM balance_history WHERE id IS NOT NULL) UNION ALL
     SELECT 'balance_history' AS table_name, 'account_id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM balance_history WHERE account_id IS NOT NULL) UNION ALL
@@ -173,7 +165,6 @@ WITH all_empty_columns AS (
     SELECT 'balance_history' AS table_name, 'sufficients' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM balance_history WHERE sufficients IS NOT NULL) UNION ALL
     SELECT 'balance_history' AS table_name, 'free_change' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM balance_history WHERE free_change IS NOT NULL) UNION ALL
     SELECT 'balance_history' AS table_name, 'reserved_change' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM balance_history WHERE reserved_change IS NOT NULL) UNION ALL
-    SELECT 'balance_history' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM balance_history WHERE indexed_at IS NOT NULL) UNION ALL
     -- data_submissions
     SELECT 'data_submissions' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM data_submissions WHERE id IS NOT NULL) UNION ALL
     SELECT 'data_submissions' AS table_name, 'block_hash' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM data_submissions WHERE block_hash IS NOT NULL) UNION ALL
@@ -186,7 +177,6 @@ WITH all_empty_columns AS (
     SELECT 'data_submissions' AS table_name, 'data_hash' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM data_submissions WHERE data_hash IS NOT NULL) UNION ALL
     SELECT 'data_submissions' AS table_name, 'proof_data' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM data_submissions WHERE proof_data IS NOT NULL) UNION ALL
     SELECT 'data_submissions' AS table_name, 'submission_fee' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM data_submissions WHERE submission_fee IS NOT NULL) UNION ALL
-    SELECT 'data_submissions' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM data_submissions WHERE indexed_at IS NOT NULL) UNION ALL
     -- transfer_events
     SELECT 'transfer_events' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM transfer_events WHERE id IS NOT NULL) UNION ALL
     SELECT 'transfer_events' AS table_name, 'block_hash' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM transfer_events WHERE block_hash IS NOT NULL) UNION ALL
@@ -200,7 +190,6 @@ WITH all_empty_columns AS (
     SELECT 'transfer_events' AS table_name, 'success' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM transfer_events WHERE success IS NOT NULL) UNION ALL
     SELECT 'transfer_events' AS table_name, 'fee_paid' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM transfer_events WHERE fee_paid IS NOT NULL) UNION ALL
     SELECT 'transfer_events' AS table_name, 'tip_paid' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM transfer_events WHERE tip_paid IS NOT NULL) UNION ALL
-    SELECT 'transfer_events' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM transfer_events WHERE indexed_at IS NOT NULL) UNION ALL
     -- staking_events
     SELECT 'staking_events' AS table_name, 'id' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM staking_events WHERE id IS NOT NULL) UNION ALL
     SELECT 'staking_events' AS table_name, 'block_hash' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM staking_events WHERE block_hash IS NOT NULL) UNION ALL
@@ -212,7 +201,6 @@ WITH all_empty_columns AS (
     SELECT 'staking_events' AS table_name, 'amount' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM staking_events WHERE amount IS NOT NULL) UNION ALL
     SELECT 'staking_events' AS table_name, 'era_index' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM staking_events WHERE era_index IS NOT NULL) UNION ALL
     SELECT 'staking_events' AS table_name, 'event_data' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM staking_events WHERE event_data IS NOT NULL) UNION ALL
-    SELECT 'staking_events' AS table_name, 'indexed_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM staking_events WHERE indexed_at IS NOT NULL) UNION ALL
     -- schema_migrations
     SELECT 'schema_migrations' AS table_name, 'version' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version IS NOT NULL) UNION ALL
     SELECT 'schema_migrations' AS table_name, 'applied_at' AS column_name FROM (SELECT 1) AS t WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE applied_at IS NOT NULL) UNION ALL
