@@ -1,3 +1,5 @@
+> **Independent project.** Not affiliated with or endorsed by Avail. I built this solo in 2025 as a working pitch for an indexer and explorer over the Avail network. More of my work: [github.com/vineetk1998](https://github.com/vineetk1998).
+
 # Avail DA Explorer Indexer
 
 A blockchain data extraction and storage system for the Avail Data Availability network that extracts complete block data and stores it in PostgreSQL for later analysis.
